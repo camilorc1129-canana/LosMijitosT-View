@@ -18,7 +18,8 @@ import { ema, rsi, macd, awesomeOscillator } from "@/lib/indicators";
 import type { Candle, Timeframe } from "@/lib/binance/types";
 import {
   INDICATOR_COLORS,
-  EMA6X_COLORS,
+  EMA6X_COLOR,
+  EMA6X_WIDTHS,
   useChartStore,
   type IndicatorKey,
 } from "@/lib/store/chart-store";
@@ -136,6 +137,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
   const [lastPrice, setLastPrice] = useState<{ value: number; pct: number } | null>(null);
   const [lastValues, setLastValues] = useState<LastValues>({});
   const [lastEma6x, setLastEma6x] = useState<(number | undefined)[]>([]);
+  const [ema6xExpanded, setEma6xExpanded] = useState(false);
   const [paneOffsets, setPaneOffsets] = useState<PaneOffset[]>([]);
   const [measure, setMeasure] = useState<MeasureState>(INITIAL_MEASURE);
   const [renderTick, setRenderTick] = useState(0);
@@ -508,9 +510,11 @@ export function PriceChart({ symbol, timeframe }: Props) {
         if (!refs[i]) {
           refs[i] = chartRef.current.addSeries(
             LineSeries,
-            { color: EMA6X_COLORS[i], lineWidth: 2, priceLineVisible: false, lastValueVisible: false },
+            { color: EMA6X_COLOR, lineWidth: EMA6X_WIDTHS[i], priceLineVisible: false, lastValueVisible: false },
             0,
           );
+        } else {
+          refs[i]!.applyOptions({ color: EMA6X_COLOR, lineWidth: EMA6X_WIDTHS[i] });
         }
       }
       updateEMA6x();
@@ -992,18 +996,34 @@ export function PriceChart({ symbol, timeframe }: Props) {
           )}
           {indicators.ema6x && (
             <div className="flex flex-col gap-0.5">
-              {([config.ema6x1, config.ema6x2, config.ema6x3, config.ema6x4, config.ema6x5, config.ema6x6] as const).map((period, i) => (
+              {/* EMA principal (30) — siempre visible, click expande las otras 5 */}
+              <div
+                className="cursor-pointer"
+                onClick={() => setEma6xExpanded((p) => !p)}
+              >
                 <IndicatorPill
-                  key={i}
-                  name={`EMA ${period}`}
-                  value={lastEma6x[i] !== undefined ? formatPrice(lastEma6x[i]!) : undefined}
-                  color={EMA6X_COLORS[i]}
+                  name={`EMA ${config.ema6x1 || 30}  ${ema6xExpanded ? "▾" : "▸"}`}
+                  value={lastEma6x[0] !== undefined ? formatPrice(lastEma6x[0]!) : undefined}
+                  color={EMA6X_COLOR}
                   hidden={hidden.ema6x}
-                  onToggleHide={i === 0 ? () => toggleHidden("ema6x") : undefined}
-                  onSettings={i === 0 ? () => setSettingsTarget("ema6x") : undefined}
-                  onRemove={i === 0 ? () => removeIndicator("ema6x") : undefined}
+                  onToggleHide={() => toggleHidden("ema6x")}
+                  onSettings={() => setSettingsTarget("ema6x")}
+                  onRemove={() => removeIndicator("ema6x")}
                 />
-              ))}
+              </div>
+              {/* Otras 5 EMAs — solo cuando está expandido */}
+              {ema6xExpanded && [1, 2, 3, 4, 5].map((i) => {
+                const period = [config.ema6x2, config.ema6x3, config.ema6x4, config.ema6x5, config.ema6x6][i - 1] || [60, 100, 200, 400, 800][i - 1];
+                return (
+                  <IndicatorPill
+                    key={i}
+                    name={`EMA ${period}`}
+                    value={lastEma6x[i] !== undefined ? formatPrice(lastEma6x[i]!) : undefined}
+                    color={EMA6X_COLOR}
+                    hidden={hidden.ema6x}
+                  />
+                );
+              })}
             </div>
           )}
         </div>

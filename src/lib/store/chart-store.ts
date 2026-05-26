@@ -46,22 +46,17 @@ export const DEFAULT_CONFIG: IndicatorConfig = {
   macdFast: 12,
   macdSlow: 26,
   macdSignal: 9,
-  ema6x1: 10,
-  ema6x2: 50,
+  ema6x1: 30,
+  ema6x2: 60,
   ema6x3: 100,
   ema6x4: 200,
   ema6x5: 400,
   ema6x6: 800,
 };
 
-export const EMA6X_COLORS = [
-  "#f9c74f", // EMA 1 — dorado (rápida, nueva)
-  "#fc4c2a", // EMA 2 — naranja-rojo (Pine Script)
-  "#35b4b8", // EMA 3 — teal (Pine Script)
-  "#d8dee9", // EMA 4 — gris claro (Pine Script era #2e3440, invisible en fondo oscuro)
-  "#9b9e9e", // EMA 5 — gris (Pine Script)
-  "#a78bfa", // EMA 6 — violeta (lenta, nueva)
-] as const;
+export const EMA6X_COLOR = "#CD5C5C";
+// lineWidth por slot: slot 1 (EMA 60) es más gruesa
+export const EMA6X_WIDTHS = [2, 3, 2, 2, 2, 2] as const;
 
 export const INDICATOR_COLORS: Record<IndicatorKey, string> = {
   ema20: "#ffb74d",
@@ -71,7 +66,7 @@ export const INDICATOR_COLORS: Record<IndicatorKey, string> = {
   macd: "#2962ff",
   volume: "#787b86",
   ao: "#009688",
-  ema6x: "#fc4c2a",
+  ema6x: "#CD5C5C",
 };
 
 export const DEFAULT_WATCHLIST = [
@@ -208,7 +203,7 @@ export const useChartStore = create<ChartState>()(
     }),
     {
       name: "tv-gratis-chart-state",
-      version: 2,
+      version: 3,
       migrate: (persisted: unknown) => {
         const s = (persisted ?? {}) as Record<string, unknown>;
         return {
