@@ -22,6 +22,7 @@ const TITLES: Record<IndicatorKey, string> = {
   rsi: "RSI",
   macd: "MACD",
   volume: "Volumen",
+  ao: "Awesome Oscillator",
 };
 
 export function IndicatorSettingsDialog() {
@@ -107,6 +108,7 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
         macdSignal: clamp(draft.macdSignal, 2, 100),
       });
     else if (target === "volume") onSave({});
+    else if (target === "ao") onSave({});
   }
 
   return (
@@ -148,6 +150,12 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
         <p className="text-xs text-tv-text-muted">
           El indicador de volumen no tiene parámetros configurables en esta
           versión.
+        </p>
+      )}
+      {target === "ao" && (
+        <p className="text-xs text-tv-text-muted">
+          Awesome Oscillator usa parámetros fijos: SMA(5) − SMA(34) sobre HL2.
+          Compatible con la definición estándar de TradingView.
         </p>
       )}
 

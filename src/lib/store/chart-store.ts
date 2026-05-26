@@ -10,7 +10,8 @@ export type IndicatorKey =
   | "ema200"
   | "rsi"
   | "macd"
-  | "volume";
+  | "volume"
+  | "ao";
 
 export type DrawingTool = "cursor" | "hline" | "measure" | "eraser";
 
@@ -47,6 +48,7 @@ export const INDICATOR_COLORS: Record<IndicatorKey, string> = {
   rsi: "#ab47bc",
   macd: "#2962ff",
   volume: "#787b86",
+  ao: "#009688",
 };
 
 export const DEFAULT_WATCHLIST = [
@@ -108,6 +110,7 @@ export const useChartStore = create<ChartState>()(
         rsi: true,
         macd: false,
         volume: true,
+        ao: false,
       },
       hidden: {
         ema20: false,
@@ -116,6 +119,7 @@ export const useChartStore = create<ChartState>()(
         rsi: false,
         macd: false,
         volume: false,
+        ao: false,
       },
       config: { ...DEFAULT_CONFIG },
       watchlist: DEFAULT_WATCHLIST,

@@ -14,7 +14,7 @@ import {
 } from "lightweight-charts";
 import { fetchKlines } from "@/lib/binance/rest";
 import { getBinanceWS } from "@/lib/binance/ws";
-import { ema, rsi, macd } from "@/lib/indicators";
+import { ema, rsi, macd, awesomeOscillator } from "@/lib/indicators";
 import type { Candle, Timeframe } from "@/lib/binance/types";
 import {
   INDICATOR_COLORS,
@@ -84,6 +84,7 @@ interface LastValues {
   macdSignal?: number;
   macdHist?: number;
   volume?: number;
+  ao?: number;
 }
 
 interface PaneOffset {
@@ -105,6 +106,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
   const macdRef = useRef<ISeriesApi<"Line"> | null>(null);
   const macdSignalRef = useRef<ISeriesApi<"Line"> | null>(null);
   const macdHistRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const aoRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const candlesRef = useRef<Candle[]>([]);
   const priceLinesMapRef = useRef<Map<string, IPriceLine>>(new Map());
 
@@ -328,6 +330,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
       macdRef.current = null;
       macdSignalRef.current = null;
       macdHistRef.current = null;
+      aoRef.current = null;
     };
   }, []);
 
@@ -468,6 +471,30 @@ export function PriceChart({ symbol, timeframe }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [indicators.macd, indicators.rsi]);
 
+  // AO pane
+  useEffect(() => {
+    if (!chartRef.current) return;
+    if (indicators.ao && !aoRef.current) {
+      const paneIndex = 1 + (indicators.rsi ? 1 : 0) + (indicators.macd ? 1 : 0);
+      const h = chartRef.current.addSeries(
+        HistogramSeries,
+        { priceLineVisible: false, lastValueVisible: false },
+        paneIndex,
+      );
+      aoRef.current = h;
+      try {
+        chartRef.current.panes()[paneIndex]?.setStretchFactor(1);
+        chartRef.current.panes()[0]?.setStretchFactor(3);
+      } catch {}
+      updateAO();
+    } else if (!indicators.ao && aoRef.current && chartRef.current) {
+      chartRef.current.removeSeries(aoRef.current);
+      aoRef.current = null;
+    }
+    requestAnimationFrame(() => recomputePaneOffsets());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [indicators.ao, indicators.rsi, indicators.macd]);
+
   // Visibility — eye toggle (hidden state) + enabled state combined
   useEffect(() => {
     const v = (key: IndicatorKey) => indicators[key] && !hidden[key];
@@ -481,6 +508,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
     if (macdSignalRef.current) macdSignalRef.current.applyOptions({ visible: v("macd") });
     if (macdHistRef.current) macdHistRef.current.applyOptions({ visible: v("macd") });
     if (volumeSeriesRef.current) volumeSeriesRef.current.applyOptions({ visible: v("volume") });
+    if (aoRef.current) aoRef.current.applyOptions({ visible: v("ao") });
   }, [indicators, hidden]);
 
   // Recompute indicators when config changes (periods)
@@ -597,6 +625,16 @@ export function PriceChart({ symbol, timeframe }: Props) {
     setLastValues((prev) => ({ ...prev, rsi: data.at(-1)?.value }));
   }
 
+  function updateAO() {
+    const c = candlesRef.current;
+    if (c.length === 0 || !aoRef.current) return;
+    const data = awesomeOscillator(c);
+    aoRef.current.setData(
+      data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value, color: p.color })),
+    );
+    setLastValues((prev) => ({ ...prev, ao: data.at(-1)?.value }));
+  }
+
   function updateMACD() {
     const c = candlesRef.current;
     if (c.length === 0 || !macdRef.current) return;
@@ -657,6 +695,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
         updateEMAs();
         updateRSI();
         updateMACD();
+        updateAO();
         chartRef.current?.timeScale().fitContent();
         requestAnimationFrame(() => recomputePaneOffsets());
 
@@ -702,6 +741,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
             updateEMAs();
             updateRSI();
             updateMACD();
+            updateAO();
             const prev = arr[arr.length - 2] ?? lastCandle;
             setLastPrice({
               value: k.close,
@@ -733,6 +773,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
   // Determine which pane each indicator lives in (based on current layout)
   const rsiPaneIdx = 1;
   const macdPaneIdx = indicators.rsi ? 2 : 1;
+  const aoPaneIdx = 1 + (indicators.rsi ? 1 : 0) + (indicators.macd ? 1 : 0);
 
   let measureRender: React.ReactNode = null;
   if (
@@ -904,6 +945,24 @@ export function PriceChart({ symbol, timeframe }: Props) {
             onToggleHide={() => toggleHidden("rsi")}
             onSettings={() => setSettingsTarget("rsi")}
             onRemove={() => removeIndicator("rsi")}
+          />
+        </div>
+      )}
+
+      {/* AO pane label */}
+      {indicators.ao && paneOffsets[aoPaneIdx] && (
+        <div
+          style={{ top: paneOffsets[aoPaneIdx].top + 6, left: 12 }}
+          className="pointer-events-none absolute z-10"
+        >
+          <IndicatorPill
+            name="AO (5, 34)"
+            value={lastValues.ao !== undefined ? lastValues.ao.toFixed(4) : undefined}
+            color={INDICATOR_COLORS.ao}
+            hidden={hidden.ao}
+            onToggleHide={() => toggleHidden("ao")}
+            onSettings={() => setSettingsTarget("ao")}
+            onRemove={() => removeIndicator("ao")}
           />
         </div>
       )}

@@ -37,6 +37,7 @@ const ENTRIES: Entry[] = [
     group: "Osciladores",
     label: (c) => `MACD (${c.macdFast}, ${c.macdSlow}, ${c.macdSignal})`,
   },
+  { key: "ao", group: "Osciladores", label: () => "Awesome Oscillator (AO)" },
 ];
 
 export function IndicatorMenu() {
