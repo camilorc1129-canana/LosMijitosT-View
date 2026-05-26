@@ -666,7 +666,14 @@ export function PriceChart({ symbol, timeframe }: Props) {
     const c = candlesRef.current;
     if (c.length === 0) return;
     const cfg = configRef.current;
-    const periods = [cfg.ema6x1, cfg.ema6x2, cfg.ema6x3, cfg.ema6x4, cfg.ema6x5, cfg.ema6x6];
+    const periods = [
+      cfg.ema6x1 || 10,
+      cfg.ema6x2 || 50,
+      cfg.ema6x3 || 100,
+      cfg.ema6x4 || 200,
+      cfg.ema6x5 || 400,
+      cfg.ema6x6 || 800,
+    ];
     const vals: (number | undefined)[] = [];
     for (let i = 0; i < 6; i++) {
       const ref = ema6xRefs.current[i];

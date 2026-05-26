@@ -208,6 +208,26 @@ export const useChartStore = create<ChartState>()(
     }),
     {
       name: "tv-gratis-chart-state",
+      version: 2,
+      migrate: (persisted: unknown) => {
+        const s = (persisted ?? {}) as Record<string, unknown>;
+        return {
+          ...s,
+          // Merge config with defaults so new fields always exist
+          config: { ...DEFAULT_CONFIG, ...(s.config as object | undefined) },
+          // Merge indicators/hidden so new keys always exist
+          indicators: {
+            ema20: true, ema50: true, ema200: false, rsi: true,
+            macd: false, volume: true, ao: false, ema6x: false,
+            ...(s.indicators as object | undefined),
+          },
+          hidden: {
+            ema20: false, ema50: false, ema200: false, rsi: false,
+            macd: false, volume: false, ao: false, ema6x: false,
+            ...(s.hidden as object | undefined),
+          },
+        };
+      },
       partialize: (s) => ({
         symbol: s.symbol,
         timeframe: s.timeframe,
