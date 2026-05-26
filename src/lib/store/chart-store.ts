@@ -11,7 +11,8 @@ export type IndicatorKey =
   | "rsi"
   | "macd"
   | "volume"
-  | "ao";
+  | "ao"
+  | "ema6x";
 
 export type DrawingTool = "cursor" | "hline" | "measure" | "eraser";
 
@@ -29,6 +30,12 @@ export interface IndicatorConfig {
   macdFast: number;
   macdSlow: number;
   macdSignal: number;
+  ema6x1: number;
+  ema6x2: number;
+  ema6x3: number;
+  ema6x4: number;
+  ema6x5: number;
+  ema6x6: number;
 }
 
 export const DEFAULT_CONFIG: IndicatorConfig = {
@@ -39,7 +46,22 @@ export const DEFAULT_CONFIG: IndicatorConfig = {
   macdFast: 12,
   macdSlow: 26,
   macdSignal: 9,
+  ema6x1: 10,
+  ema6x2: 50,
+  ema6x3: 100,
+  ema6x4: 200,
+  ema6x5: 400,
+  ema6x6: 800,
 };
+
+export const EMA6X_COLORS = [
+  "#f9c74f", // EMA 1 — dorado (rápida, nueva)
+  "#fc4c2a", // EMA 2 — naranja-rojo (Pine Script)
+  "#35b4b8", // EMA 3 — teal (Pine Script)
+  "#d8dee9", // EMA 4 — gris claro (Pine Script era #2e3440, invisible en fondo oscuro)
+  "#9b9e9e", // EMA 5 — gris (Pine Script)
+  "#a78bfa", // EMA 6 — violeta (lenta, nueva)
+] as const;
 
 export const INDICATOR_COLORS: Record<IndicatorKey, string> = {
   ema20: "#ffb74d",
@@ -49,6 +71,7 @@ export const INDICATOR_COLORS: Record<IndicatorKey, string> = {
   macd: "#2962ff",
   volume: "#787b86",
   ao: "#009688",
+  ema6x: "#fc4c2a",
 };
 
 export const DEFAULT_WATCHLIST = [
@@ -111,6 +134,7 @@ export const useChartStore = create<ChartState>()(
         macd: false,
         volume: true,
         ao: false,
+        ema6x: false,
       },
       hidden: {
         ema20: false,
@@ -120,6 +144,7 @@ export const useChartStore = create<ChartState>()(
         macd: false,
         volume: false,
         ao: false,
+        ema6x: false,
       },
       config: { ...DEFAULT_CONFIG },
       watchlist: DEFAULT_WATCHLIST,

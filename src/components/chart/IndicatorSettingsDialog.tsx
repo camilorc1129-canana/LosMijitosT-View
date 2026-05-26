@@ -23,6 +23,7 @@ const TITLES: Record<IndicatorKey, string> = {
   macd: "MACD",
   volume: "Volumen",
   ao: "Awesome Oscillator",
+  ema6x: "Moving Average Exponential ×6",
 };
 
 export function IndicatorSettingsDialog() {
@@ -82,6 +83,12 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
     macdFast: config.macdFast,
     macdSlow: config.macdSlow,
     macdSignal: config.macdSignal,
+    ema6x1: config.ema6x1,
+    ema6x2: config.ema6x2,
+    ema6x3: config.ema6x3,
+    ema6x4: config.ema6x4,
+    ema6x5: config.ema6x5,
+    ema6x6: config.ema6x6,
   });
 
   useEffect(() => {
@@ -93,6 +100,12 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
       macdFast: config.macdFast,
       macdSlow: config.macdSlow,
       macdSignal: config.macdSignal,
+      ema6x1: config.ema6x1,
+      ema6x2: config.ema6x2,
+      ema6x3: config.ema6x3,
+      ema6x4: config.ema6x4,
+      ema6x5: config.ema6x5,
+      ema6x6: config.ema6x6,
     });
   }, [config, target]);
 
@@ -109,6 +122,15 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
       });
     else if (target === "volume") onSave({});
     else if (target === "ao") onSave({});
+    else if (target === "ema6x")
+      onSave({
+        ema6x1: clamp(draft.ema6x1, 2, 500),
+        ema6x2: clamp(draft.ema6x2, 2, 500),
+        ema6x3: clamp(draft.ema6x3, 2, 500),
+        ema6x4: clamp(draft.ema6x4, 2, 500),
+        ema6x5: clamp(draft.ema6x5, 2, 1000),
+        ema6x6: clamp(draft.ema6x6, 2, 1000),
+      });
   }
 
   return (
@@ -157,6 +179,18 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
           Awesome Oscillator usa parámetros fijos: SMA(5) − SMA(34) sobre HL2.
           Compatible con la definición estándar de TradingView.
         </p>
+      )}
+      {target === "ema6x" && (
+        <div className="grid grid-cols-3 gap-2">
+          {(["ema6x1","ema6x2","ema6x3","ema6x4","ema6x5","ema6x6"] as const).map((k, i) => (
+            <Field
+              key={k}
+              label={`EMA ${i + 1}`}
+              value={draft[k]}
+              onChange={(n) => setDraft((d) => ({ ...d, [k]: n }))}
+            />
+          ))}
+        </div>
       )}
 
       <div className="mt-2 flex items-center justify-between">

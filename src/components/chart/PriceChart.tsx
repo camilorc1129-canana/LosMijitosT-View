@@ -18,6 +18,7 @@ import { ema, rsi, macd, awesomeOscillator } from "@/lib/indicators";
 import type { Candle, Timeframe } from "@/lib/binance/types";
 import {
   INDICATOR_COLORS,
+  EMA6X_COLORS,
   useChartStore,
   type IndicatorKey,
 } from "@/lib/store/chart-store";
@@ -107,6 +108,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
   const macdSignalRef = useRef<ISeriesApi<"Line"> | null>(null);
   const macdHistRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const aoRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const ema6xRefs = useRef<Array<ISeriesApi<"Line"> | null>>([null, null, null, null, null, null]);
   const candlesRef = useRef<Candle[]>([]);
   const priceLinesMapRef = useRef<Map<string, IPriceLine>>(new Map());
 
@@ -133,6 +135,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [lastPrice, setLastPrice] = useState<{ value: number; pct: number } | null>(null);
   const [lastValues, setLastValues] = useState<LastValues>({});
+  const [lastEma6x, setLastEma6x] = useState<(number | undefined)[]>([]);
   const [paneOffsets, setPaneOffsets] = useState<PaneOffset[]>([]);
   const [measure, setMeasure] = useState<MeasureState>(INITIAL_MEASURE);
   const [renderTick, setRenderTick] = useState(0);
@@ -331,6 +334,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
       macdSignalRef.current = null;
       macdHistRef.current = null;
       aoRef.current = null;
+      ema6xRefs.current = [null, null, null, null, null, null];
     };
   }, []);
 
@@ -495,6 +499,33 @@ export function PriceChart({ symbol, timeframe }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [indicators.ao, indicators.rsi, indicators.macd]);
 
+  // EMA ×6 — main pane overlay (pane 0)
+  useEffect(() => {
+    if (!chartRef.current) return;
+    if (indicators.ema6x) {
+      const refs = ema6xRefs.current;
+      for (let i = 0; i < 6; i++) {
+        if (!refs[i]) {
+          refs[i] = chartRef.current.addSeries(
+            LineSeries,
+            { color: EMA6X_COLORS[i], lineWidth: 2, priceLineVisible: false, lastValueVisible: false },
+            0,
+          );
+        }
+      }
+      updateEMA6x();
+    } else {
+      for (let i = 0; i < 6; i++) {
+        if (ema6xRefs.current[i] && chartRef.current) {
+          chartRef.current.removeSeries(ema6xRefs.current[i]!);
+          ema6xRefs.current[i] = null;
+        }
+      }
+    }
+    requestAnimationFrame(() => recomputePaneOffsets());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [indicators.ema6x]);
+
   // Visibility — eye toggle (hidden state) + enabled state combined
   useEffect(() => {
     const v = (key: IndicatorKey) => indicators[key] && !hidden[key];
@@ -509,6 +540,8 @@ export function PriceChart({ symbol, timeframe }: Props) {
     if (macdHistRef.current) macdHistRef.current.applyOptions({ visible: v("macd") });
     if (volumeSeriesRef.current) volumeSeriesRef.current.applyOptions({ visible: v("volume") });
     if (aoRef.current) aoRef.current.applyOptions({ visible: v("ao") });
+    const ema6xVisible = v("ema6x");
+    for (const ref of ema6xRefs.current) ref?.applyOptions({ visible: ema6xVisible });
   }, [indicators, hidden]);
 
   // Recompute indicators when config changes (periods)
@@ -523,6 +556,10 @@ export function PriceChart({ symbol, timeframe }: Props) {
   useEffect(() => {
     updateMACD();
   }, [config.macdFast, config.macdSlow, config.macdSignal]);
+
+  useEffect(() => {
+    updateEMA6x();
+  }, [config.ema6x1, config.ema6x2, config.ema6x3, config.ema6x4, config.ema6x5, config.ema6x6]);
 
   // Sync price lines from store to the candle series
   useEffect(() => {
@@ -625,6 +662,22 @@ export function PriceChart({ symbol, timeframe }: Props) {
     setLastValues((prev) => ({ ...prev, rsi: data.at(-1)?.value }));
   }
 
+  function updateEMA6x() {
+    const c = candlesRef.current;
+    if (c.length === 0) return;
+    const cfg = configRef.current;
+    const periods = [cfg.ema6x1, cfg.ema6x2, cfg.ema6x3, cfg.ema6x4, cfg.ema6x5, cfg.ema6x6];
+    const vals: (number | undefined)[] = [];
+    for (let i = 0; i < 6; i++) {
+      const ref = ema6xRefs.current[i];
+      if (!ref) { vals.push(undefined); continue; }
+      const data = ema(c, periods[i]);
+      ref.setData(data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })));
+      vals.push(data.at(-1)?.value);
+    }
+    setLastEma6x(vals);
+  }
+
   function updateAO() {
     const c = candlesRef.current;
     if (c.length === 0 || !aoRef.current) return;
@@ -696,6 +749,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
         updateRSI();
         updateMACD();
         updateAO();
+        updateEMA6x();
         chartRef.current?.timeScale().fitContent();
         requestAnimationFrame(() => recomputePaneOffsets());
 
@@ -742,6 +796,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
             updateRSI();
             updateMACD();
             updateAO();
+            updateEMA6x();
             const prev = arr[arr.length - 2] ?? lastCandle;
             setLastPrice({
               value: k.close,
@@ -927,6 +982,22 @@ export function PriceChart({ symbol, timeframe }: Props) {
               onSettings={() => setSettingsTarget("volume")}
               onRemove={() => removeIndicator("volume")}
             />
+          )}
+          {indicators.ema6x && (
+            <div className="flex flex-col gap-0.5">
+              {([config.ema6x1, config.ema6x2, config.ema6x3, config.ema6x4, config.ema6x5, config.ema6x6] as const).map((period, i) => (
+                <IndicatorPill
+                  key={i}
+                  name={`EMA ${period}`}
+                  value={lastEma6x[i] !== undefined ? formatPrice(lastEma6x[i]!) : undefined}
+                  color={EMA6X_COLORS[i]}
+                  hidden={hidden.ema6x}
+                  onToggleHide={i === 0 ? () => toggleHidden("ema6x") : undefined}
+                  onSettings={i === 0 ? () => setSettingsTarget("ema6x") : undefined}
+                  onRemove={i === 0 ? () => removeIndicator("ema6x") : undefined}
+                />
+              ))}
+            </div>
           )}
         </div>
       </div>

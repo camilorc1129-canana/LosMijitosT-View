@@ -38,6 +38,7 @@ const ENTRIES: Entry[] = [
     label: (c) => `MACD (${c.macdFast}, ${c.macdSlow}, ${c.macdSignal})`,
   },
   { key: "ao", group: "Osciladores", label: () => "Awesome Oscillator (AO)" },
+  { key: "ema6x", group: "Medias móviles", label: (c) => `EMA ×6 (${c.ema6x1}, ${c.ema6x2}, ${c.ema6x3}, ${c.ema6x4}, ${c.ema6x5}, ${c.ema6x6})` },
 ];
 
 export function IndicatorMenu() {
