@@ -27,6 +27,10 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-2">
+        <span className="select-none text-sm font-bold italic tracking-widest bg-linear-to-r from-tv-green via-tv-yellow to-tv-red bg-clip-text text-transparent">
+          Los Mijitos team
+        </span>
+        <Separator orientation="vertical" className="h-6 bg-tv-border" />
         <a
           href="https://github.com"
           target="_blank"
