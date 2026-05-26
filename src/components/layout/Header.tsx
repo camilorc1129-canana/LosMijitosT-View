@@ -27,7 +27,10 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="select-none text-sm font-bold italic tracking-widest bg-linear-to-r from-tv-green via-tv-yellow to-tv-red bg-clip-text text-transparent">
+        <span
+          className="select-none text-2xl leading-none"
+          style={{ fontFamily: "var(--font-sacramento)", color: "#0f9eb4" }}
+        >
           Los Mijitos team
         </span>
         <Separator orientation="vertical" className="h-6 bg-tv-border" />
