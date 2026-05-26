@@ -10,7 +10,14 @@ export function Header() {
   return (
     <header className="flex h-12 items-center justify-between border-b border-tv-border bg-tv-panel px-3">
       <div className="flex items-center gap-1">
-        <div className="flex items-center gap-2 pr-2">
+        <span
+          className="select-none pr-2 text-3xl leading-none"
+          style={{ fontFamily: "var(--font-sacramento)", color: "#0f9eb4", WebkitTextStroke: "0.5px #0f9eb4" }}
+        >
+          Los Mijitos team
+        </span>
+        <Separator orientation="vertical" className="h-6 bg-tv-border" />
+        <div className="flex items-center gap-2 px-2">
           <div className="flex h-7 w-7 items-center justify-center rounded bg-tv-blue/20">
             <Zap className="h-4 w-4 text-tv-blue" />
           </div>
@@ -27,13 +34,6 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-2">
-        <span
-          className="select-none text-2xl leading-none"
-          style={{ fontFamily: "var(--font-sacramento)", color: "#0f9eb4" }}
-        >
-          Los Mijitos team
-        </span>
-        <Separator orientation="vertical" className="h-6 bg-tv-border" />
         <a
           href="https://github.com"
           target="_blank"
