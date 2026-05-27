@@ -14,7 +14,7 @@ import {
 } from "lightweight-charts";
 import { fetchKlines } from "@/lib/binance/rest";
 import { getBinanceWS } from "@/lib/binance/ws";
-import { ema, rsi, macd, awesomeOscillator, heikinAshi } from "@/lib/indicators";
+import { sma, ema, rsi, macd, awesomeOscillator, heikinAshi } from "@/lib/indicators";
 import type { Candle, Timeframe } from "@/lib/binance/types";
 import {
   INDICATOR_COLORS,
@@ -88,6 +88,7 @@ interface LastValues {
   macdHist?: number;
   volume?: number;
   ao?: number;
+  sma?: number;
 }
 
 interface PaneOffset {
@@ -111,6 +112,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
   const macdHistRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const aoRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const ema6xRefs = useRef<Array<ISeriesApi<"Line"> | null>>([null, null, null, null, null, null]);
+  const smaRef = useRef<ISeriesApi<"Line"> | null>(null);
   const candlesRef = useRef<Candle[]>([]);
   const priceLinesMapRef = useRef<Map<string, IPriceLine>>(new Map());
 
@@ -345,6 +347,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
       macdHistRef.current = null;
       aoRef.current = null;
       ema6xRefs.current = [null, null, null, null, null, null];
+      smaRef.current = null;
     };
   }, []);
 
@@ -546,6 +549,30 @@ export function PriceChart({ symbol, timeframe }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [indicators.ema6x]);
 
+  // SMA — main pane overlay (pane 0)
+  useEffect(() => {
+    if (!chartRef.current) return;
+    if (indicators.sma && !smaRef.current) {
+      smaRef.current = chartRef.current.addSeries(
+        LineSeries,
+        {
+          color: configRef.current.smaColor || "#26a69a",
+          lineWidth: 1,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        },
+        0,
+      );
+      updateSMA();
+    } else if (!indicators.sma && smaRef.current && chartRef.current) {
+      chartRef.current.removeSeries(smaRef.current);
+      smaRef.current = null;
+    }
+    requestAnimationFrame(() => recomputePaneOffsets());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [indicators.sma]);
+
   // Visibility — eye toggle (hidden state) + enabled state combined
   useEffect(() => {
     const v = (key: IndicatorKey) => indicators[key] && !hidden[key];
@@ -562,6 +589,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
     if (aoRef.current) aoRef.current.applyOptions({ visible: v("ao") });
     const ema6xVisible = v("ema6x");
     for (const ref of ema6xRefs.current) ref?.applyOptions({ visible: ema6xVisible });
+    if (smaRef.current) smaRef.current.applyOptions({ visible: v("sma") });
   }, [indicators, hidden]);
 
   // Recompute indicators when config changes (periods)
@@ -592,6 +620,15 @@ export function PriceChart({ symbol, timeframe }: Props) {
     ];
     ema6xRefs.current.forEach((ref, i) => ref?.applyOptions({ color: colors[i] }));
   }, [config.ema6xColor1, config.ema6xColor2, config.ema6xColor3, config.ema6xColor4, config.ema6xColor5, config.ema6xColor6]);
+
+  useEffect(() => {
+    updateSMA();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.smaLength]);
+
+  useEffect(() => {
+    smaRef.current?.applyOptions({ color: config.smaColor || "#26a69a" });
+  }, [config.smaColor]);
 
   // Sync price lines from store to the candle series
   useEffect(() => {
@@ -758,6 +795,17 @@ export function PriceChart({ symbol, timeframe }: Props) {
     }));
   }
 
+  function updateSMA() {
+    const c = toDisplay(candlesRef.current);
+    if (c.length === 0 || !smaRef.current) return;
+    const cfg = configRef.current;
+    const data = sma(c, cfg.smaLength);
+    smaRef.current.setData(
+      data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })),
+    );
+    setLastValues((prev) => ({ ...prev, sma: data.at(-1)?.value }));
+  }
+
   // Redraw candles when candle type changes (Candles ↔ Heikin Ashi)
   useEffect(() => {
     if (!candleSeriesRef.current || candlesRef.current.length === 0) return;
@@ -813,6 +861,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
         updateMACD();
         updateAO();
         updateEMA6x();
+        updateSMA();
         chartRef.current?.timeScale().fitContent();
         requestAnimationFrame(() => recomputePaneOffsets());
 
@@ -861,6 +910,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
             updateMACD();
             updateAO();
             updateEMA6x();
+            updateSMA();
             const prev = arr[arr.length - 2] ?? lastCandle;
             setLastPrice({
               value: k.close,
@@ -1045,6 +1095,17 @@ export function PriceChart({ symbol, timeframe }: Props) {
               onToggleHide={() => toggleHidden("volume")}
               onSettings={() => setSettingsTarget("volume")}
               onRemove={() => removeIndicator("volume")}
+            />
+          )}
+          {indicators.sma && (
+            <IndicatorPill
+              name={`SMA ${config.smaLength}`}
+              value={lastValues.sma !== undefined ? formatPrice(lastValues.sma) : undefined}
+              color={config.smaColor || INDICATOR_COLORS.sma}
+              hidden={hidden.sma}
+              onToggleHide={() => toggleHidden("sma")}
+              onSettings={() => setSettingsTarget("sma")}
+              onRemove={() => removeIndicator("sma")}
             />
           )}
           {indicators.ema6x && (

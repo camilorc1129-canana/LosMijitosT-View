@@ -24,6 +24,7 @@ const TITLES: Record<IndicatorKey, string> = {
   volume: "Volumen",
   ao: "Awesome Oscillator",
   ema6x: "Moving Average Exponential ×6",
+  sma: "Simple Moving Average",
 };
 
 export function IndicatorSettingsDialog() {
@@ -95,6 +96,8 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
     ema6xColor4: config.ema6xColor4 || "#CD5C5C",
     ema6xColor5: config.ema6xColor5 || "#CD5C5C",
     ema6xColor6: config.ema6xColor6 || "#CD5C5C",
+    smaLength: config.smaLength,
+    smaColor: config.smaColor || "#26a69a",
   });
 
   useEffect(() => {
@@ -118,6 +121,8 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
       ema6xColor4: config.ema6xColor4 || "#CD5C5C",
       ema6xColor5: config.ema6xColor5 || "#CD5C5C",
       ema6xColor6: config.ema6xColor6 || "#CD5C5C",
+      smaLength: config.smaLength,
+      smaColor: config.smaColor || "#26a69a",
     });
   }, [config, target]);
 
@@ -134,6 +139,8 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
       });
     else if (target === "volume") onSave({});
     else if (target === "ao") onSave({});
+    else if (target === "sma")
+      onSave({ smaLength: clamp(draft.smaLength, 2, 500), smaColor: draft.smaColor });
     else if (target === "ema6x")
       onSave({
         ema6x1: clamp(draft.ema6x1, 2, 500),
@@ -197,6 +204,19 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
           Awesome Oscillator usa parámetros fijos: SMA(5) − SMA(34) sobre HL2.
           Compatible con la definición estándar de TradingView.
         </p>
+      )}
+      {target === "sma" && (
+        <div className="flex items-center gap-2">
+          <ColorSwatch
+            value={draft.smaColor}
+            onChange={(v) => setDraft((d) => ({ ...d, smaColor: v }))}
+          />
+          <Field
+            label="Período"
+            value={draft.smaLength}
+            onChange={(n) => setDraft((d) => ({ ...d, smaLength: n }))}
+          />
+        </div>
       )}
       {target === "ema6x" && (
         <div className="flex flex-col gap-2">

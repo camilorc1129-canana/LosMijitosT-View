@@ -12,7 +12,8 @@ export type IndicatorKey =
   | "macd"
   | "volume"
   | "ao"
-  | "ema6x";
+  | "ema6x"
+  | "sma";
 
 export type DrawingTool = "cursor" | "hline" | "measure" | "eraser";
 export type CandleType = "candles" | "heikinashi";
@@ -43,6 +44,8 @@ export interface IndicatorConfig {
   ema6xColor4: string;
   ema6xColor5: string;
   ema6xColor6: string;
+  smaLength: number;
+  smaColor: string;
 }
 
 export const DEFAULT_CONFIG: IndicatorConfig = {
@@ -65,6 +68,8 @@ export const DEFAULT_CONFIG: IndicatorConfig = {
   ema6xColor4: "#CD5C5C",
   ema6xColor5: "#CD5C5C",
   ema6xColor6: "#CD5C5C",
+  smaLength: 9,
+  smaColor: "#26a69a",
 };
 
 export const EMA6X_COLOR = "#CD5C5C";
@@ -80,6 +85,7 @@ export const INDICATOR_COLORS: Record<IndicatorKey, string> = {
   volume: "#787b86",
   ao: "#009688",
   ema6x: "#CD5C5C",
+  sma: "#26a69a",
 };
 
 export const DEFAULT_WATCHLIST = [
@@ -145,6 +151,7 @@ export const useChartStore = create<ChartState>()(
         volume: true,
         ao: false,
         ema6x: false,
+        sma: false,
       },
       hidden: {
         ema20: false,
@@ -155,6 +162,7 @@ export const useChartStore = create<ChartState>()(
         volume: false,
         ao: false,
         ema6x: false,
+        sma: false,
       },
       config: { ...DEFAULT_CONFIG },
       candleType: "candles" as CandleType,
@@ -220,7 +228,7 @@ export const useChartStore = create<ChartState>()(
     }),
     {
       name: "tv-gratis-chart-state",
-      version: 4,
+      version: 5,
       migrate: (persisted: unknown) => {
         const s = (persisted ?? {}) as Record<string, unknown>;
         return {
@@ -230,12 +238,12 @@ export const useChartStore = create<ChartState>()(
           // Merge indicators/hidden so new keys always exist
           indicators: {
             ema20: true, ema50: true, ema200: false, rsi: true,
-            macd: false, volume: true, ao: false, ema6x: false,
+            macd: false, volume: true, ao: false, ema6x: false, sma: false,
             ...(s.indicators as object | undefined),
           },
           hidden: {
             ema20: false, ema50: false, ema200: false, rsi: false,
-            macd: false, volume: false, ao: false, ema6x: false,
+            macd: false, volume: false, ao: false, ema6x: false, sma: false,
             ...(s.hidden as object | undefined),
           },
         };
