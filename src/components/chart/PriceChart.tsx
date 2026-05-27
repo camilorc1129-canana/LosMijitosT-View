@@ -341,11 +341,14 @@ export function PriceChart({ symbol, timeframe }: Props) {
       }
     });
 
-    // Re-render measure overlay on pan / zoom so pixel coords stay in sync
+    // Re-render overlays on pan / zoom (horizontal)
     const tsRangeHandler = () => setRenderTick((t) => t + 1);
     chart.timeScale().subscribeVisibleTimeRangeChange(tsRangeHandler);
     const logicalRangeHandler = () => setRenderTick((t) => t + 1);
     chart.timeScale().subscribeVisibleLogicalRangeChange(logicalRangeHandler);
+    // Re-render overlays on vertical price scale scroll/zoom (wheel event)
+    const wheelHandler = () => requestAnimationFrame(() => setRenderTick((t) => t + 1));
+    containerRef.current.addEventListener("wheel", wheelHandler, { passive: true });
 
     // ResizeObserver — recompute pane offsets when chart container resizes
     const ro = new ResizeObserver(() => {
@@ -357,6 +360,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
     return () => {
       chart.timeScale().unsubscribeVisibleTimeRangeChange(tsRangeHandler);
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(logicalRangeHandler);
+      containerRef.current?.removeEventListener("wheel", wheelHandler);
       ro.disconnect();
       chart.remove();
       chartRef.current = null;
@@ -1076,6 +1080,32 @@ export function PriceChart({ symbol, timeframe }: Props) {
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
       {measureRender}
+
+      {/* Independent candle timer — fixed just below the native price label */}
+      {(() => {
+        void renderTick;
+        if (!currentCandle || !lastPrice || !candleSeriesRef.current) return null;
+        const y = candleSeriesRef.current.priceToCoordinate(lastPrice.value);
+        if (y === null || !isFinite(y)) return null;
+        const paneH = paneOffsets[0]?.height ?? 9999;
+        // Native price label is ~22 px tall and centered on y; timer starts right below it
+        const top = Math.round(y) + 12;
+        if (top + 20 > paneH || y < -22) return null;
+        const col = currentCandle.close >= currentCandle.open ? TV_COLORS.green : TV_COLORS.red;
+        return (
+          <div
+            className="pointer-events-none absolute right-0 flex items-center"
+            style={{ top, height: 20 }}
+          >
+            <span
+              className="px-1.5 font-mono text-[11px] font-semibold text-white"
+              style={{ backgroundColor: col }}
+            >
+              {formatElapsed(elapsed)}
+            </span>
+          </div>
+        );
+      })()}
 
       {/* Right-axis live candle overlay: H, Price, Timer, L — collision-free */}
       {(() => {
