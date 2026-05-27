@@ -1094,7 +1094,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
         const col = currentCandle.close >= currentCandle.open ? TV_COLORS.green : TV_COLORS.red;
         return (
           <div
-            className="pointer-events-none absolute right-0 flex items-center"
+            className="pointer-events-none absolute right-0 z-10 flex items-center"
             style={{ top, height: 20 }}
           >
             <span
