@@ -129,8 +129,6 @@ export function PriceChart({ symbol, timeframe }: Props) {
   const aoRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const ema6xRefs = useRef<Array<ISeriesApi<"Line"> | null>>([null, null, null, null, null, null]);
   const smaRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const hPriceLineRef = useRef<IPriceLine | null>(null);
-  const lPriceLineRef = useRef<IPriceLine | null>(null);
   const candlesRef = useRef<Candle[]>([]);
   const priceLinesMapRef = useRef<Map<string, IPriceLine>>(new Map());
 
@@ -377,8 +375,6 @@ export function PriceChart({ symbol, timeframe }: Props) {
       aoRef.current = null;
       ema6xRefs.current = [null, null, null, null, null, null];
       smaRef.current = null;
-      hPriceLineRef.current = null;
-      lPriceLineRef.current = null;
     };
   }, []);
 
@@ -875,30 +871,6 @@ export function PriceChart({ symbol, timeframe }: Props) {
     setLastValues((prev) => ({ ...prev, sma: data.at(-1)?.value }));
   }
 
-  function updateHLPriceLines(c: { open: number; high: number; low: number; close: number }) {
-    if (!candleSeriesRef.current) return;
-    const isUp = c.close >= c.open;
-    const col = isUp ? TV_COLORS.green : TV_COLORS.red;
-    const mkOpts = (price: number) => ({
-      price,
-      color: col,
-      lineWidth: 1 as const,
-      lineStyle: 2 as const,
-      axisLabelVisible: true,
-      title: "",
-    });
-    if (hPriceLineRef.current) {
-      hPriceLineRef.current.applyOptions(mkOpts(c.high));
-    } else {
-      hPriceLineRef.current = candleSeriesRef.current.createPriceLine(mkOpts(c.high));
-    }
-    if (lPriceLineRef.current) {
-      lPriceLineRef.current.applyOptions(mkOpts(c.low));
-    } else {
-      lPriceLineRef.current = candleSeriesRef.current.createPriceLine(mkOpts(c.low));
-    }
-  }
-
   // Redraw candles when candle type changes (Candles ↔ Heikin Ashi)
   useEffect(() => {
     if (!candleSeriesRef.current || candlesRef.current.length === 0) return;
@@ -961,21 +933,11 @@ export function PriceChart({ symbol, timeframe }: Props) {
         if (klines.length > 0) {
           const last = klines[klines.length - 1];
           const prev = klines[klines.length - 2] ?? last;
-          // Reset H/L price lines for new symbol/timeframe
-          if (hPriceLineRef.current && candleSeriesRef.current) {
-            try { candleSeriesRef.current.removePriceLine(hPriceLineRef.current); } catch { /* noop */ }
-            hPriceLineRef.current = null;
-          }
-          if (lPriceLineRef.current && candleSeriesRef.current) {
-            try { candleSeriesRef.current.removePriceLine(lPriceLineRef.current); } catch { /* noop */ }
-            lPriceLineRef.current = null;
-          }
           setLastPrice({
             value: last.close,
             pct: prev.close === 0 ? 0 : ((last.close - prev.close) / prev.close) * 100,
           });
           setCurrentCandle({ open: last.open, high: last.high, low: last.low, close: last.close, time: last.time });
-          updateHLPriceLines(last);
         }
 
         const ws = getBinanceWS();
@@ -1021,7 +983,6 @@ export function PriceChart({ symbol, timeframe }: Props) {
               pct: prev && prev.close !== 0 ? ((k.close - prev.close) / prev.close) * 100 : 0,
             });
             setCurrentCandle({ open: k.open, high: k.high, low: k.low, close: k.close, time: k.time });
-            updateHLPriceLines(k);
           },
         });
       } catch (e) {
@@ -1101,28 +1062,76 @@ export function PriceChart({ symbol, timeframe }: Props) {
       <div ref={containerRef} className="h-full w-full" />
       {measureRender}
 
-      {/* Timer overlay — right axis, just below the live price label */}
+      {/* Right-axis live candle overlay: H, Price, Timer, L — collision-free */}
       {(() => {
         void renderTick;
-        if (!lastPrice || !currentCandle || !candleSeriesRef.current) return null;
-        const y = candleSeriesRef.current.priceToCoordinate(lastPrice.value);
-        if (y === null || !isFinite(y)) return null;
+        if (!currentCandle || !lastPrice || !candleSeriesRef.current) return null;
+        const series = candleSeriesRef.current;
+        const yH = series.priceToCoordinate(currentCandle.high);
+        const yP = series.priceToCoordinate(lastPrice.value);
+        const yL = series.priceToCoordinate(currentCandle.low);
+        if (yH === null || yP === null || yL === null) return null;
         const paneH = paneOffsets[0]?.height ?? 9999;
-        if (y < 0 || y > paneH) return null;
         const isUp = currentCandle.close >= currentCandle.open;
         const col = isUp ? TV_COLORS.green : TV_COLORS.red;
+
+        // Label heights and minimum gap
+        const LH = 20; // H, Timer, L
+        const PH = 22; // Price (slightly taller)
+        const GAP = 2;
+
+        // Ideal top positions (centered on their price y)
+        const tops = [
+          yH - LH / 2,          // H label
+          yP - PH / 2,           // Price label
+          yP + PH / 2 + GAP,     // Timer (just below price)
+          yL - LH / 2,           // L label
+        ];
+        const heights = [LH, PH, LH, LH];
+
+        // Forward pass: push each label down if it overlaps the one above
+        for (let i = 1; i < tops.length; i++) {
+          const minTop = tops[i - 1] + heights[i - 1] + GAP;
+          if (tops[i] < minTop) tops[i] = minTop;
+        }
+        // Backward pass: push each label up if it goes beyond pane bottom
+        for (let i = tops.length - 1; i >= 0; i--) {
+          const maxTop = paneH - heights[i];
+          if (tops[i] > maxTop) tops[i] = maxTop;
+          if (i > 0) {
+            const maxForPrev = tops[i] - heights[i - 1] - GAP;
+            if (tops[i - 1] > maxForPrev) tops[i - 1] = maxForPrev;
+          }
+        }
+        // Clamp all to valid range
+        for (let i = 0; i < tops.length; i++) {
+          tops[i] = Math.max(0, Math.min(tops[i], paneH - heights[i]));
+        }
+
+        const items = [
+          { top: tops[0], h: LH, text: `H  ${formatPrice(currentCandle.high)}`, cls: "text-[11px] font-semibold" },
+          { top: tops[1], h: PH, text: formatPrice(lastPrice.value), cls: "text-sm font-bold" },
+          { top: tops[2], h: LH, text: formatElapsed(elapsed), cls: "font-mono text-[11px] font-semibold" },
+          { top: tops[3], h: LH, text: `L  ${formatPrice(currentCandle.low)}`, cls: "text-[11px] font-semibold" },
+        ];
+
         return (
-          <div
-            className="pointer-events-none absolute z-10 flex w-full justify-end"
-            style={{ top: Math.round(y) + 13 }}
-          >
-            <span
-              className="px-1.5 py-px font-mono text-[11px] font-semibold text-white"
-              style={{ backgroundColor: col }}
-            >
-              {formatElapsed(elapsed)}
-            </span>
-          </div>
+          <>
+            {items.map((item, i) => (
+              <div
+                key={i}
+                className="pointer-events-none absolute right-0 flex items-center"
+                style={{ top: Math.round(item.top), height: item.h }}
+              >
+                <span
+                  className={`px-1.5 text-white ${item.cls}`}
+                  style={{ backgroundColor: col }}
+                >
+                  {item.text}
+                </span>
+              </div>
+            ))}
+          </>
         );
       })()}
 
