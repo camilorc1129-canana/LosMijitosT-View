@@ -210,18 +210,21 @@ export function PriceChart({ symbol, timeframe }: Props) {
       lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: false,
+      crosshairMarkerVisible: false,
     });
     ema50Ref.current = chart.addSeries(LineSeries, {
       color: INDICATOR_COLORS.ema50,
       lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: false,
+      crosshairMarkerVisible: false,
     });
     ema200Ref.current = chart.addSeries(LineSeries, {
       color: INDICATOR_COLORS.ema200,
       lineWidth: 2,
       priceLineVisible: false,
       lastValueVisible: false,
+      crosshairMarkerVisible: false,
     });
 
     chartRef.current = chart;
@@ -506,15 +509,23 @@ export function PriceChart({ symbol, timeframe }: Props) {
     if (!chartRef.current) return;
     if (indicators.ema6x) {
       const refs = ema6xRefs.current;
+      const ema6xColors = [
+        configRef.current.ema6xColor1 || EMA6X_COLOR,
+        configRef.current.ema6xColor2 || EMA6X_COLOR,
+        configRef.current.ema6xColor3 || EMA6X_COLOR,
+        configRef.current.ema6xColor4 || EMA6X_COLOR,
+        configRef.current.ema6xColor5 || EMA6X_COLOR,
+        configRef.current.ema6xColor6 || EMA6X_COLOR,
+      ];
       for (let i = 0; i < 6; i++) {
         if (!refs[i]) {
           refs[i] = chartRef.current.addSeries(
             LineSeries,
-            { color: EMA6X_COLOR, lineWidth: EMA6X_WIDTHS[i], priceLineVisible: false, lastValueVisible: false },
+            { color: ema6xColors[i], lineWidth: EMA6X_WIDTHS[i], priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false },
             0,
           );
         } else {
-          refs[i]!.applyOptions({ color: EMA6X_COLOR, lineWidth: EMA6X_WIDTHS[i] });
+          refs[i]!.applyOptions({ color: ema6xColors[i], lineWidth: EMA6X_WIDTHS[i] });
         }
       }
       updateEMA6x();
@@ -564,6 +575,18 @@ export function PriceChart({ symbol, timeframe }: Props) {
   useEffect(() => {
     updateEMA6x();
   }, [config.ema6x1, config.ema6x2, config.ema6x3, config.ema6x4, config.ema6x5, config.ema6x6]);
+
+  useEffect(() => {
+    const colors = [
+      config.ema6xColor1 || EMA6X_COLOR,
+      config.ema6xColor2 || EMA6X_COLOR,
+      config.ema6xColor3 || EMA6X_COLOR,
+      config.ema6xColor4 || EMA6X_COLOR,
+      config.ema6xColor5 || EMA6X_COLOR,
+      config.ema6xColor6 || EMA6X_COLOR,
+    ];
+    ema6xRefs.current.forEach((ref, i) => ref?.applyOptions({ color: colors[i] }));
+  }, [config.ema6xColor1, config.ema6xColor2, config.ema6xColor3, config.ema6xColor4, config.ema6xColor5, config.ema6xColor6]);
 
   // Sync price lines from store to the candle series
   useEffect(() => {
@@ -996,15 +1019,12 @@ export function PriceChart({ symbol, timeframe }: Props) {
           )}
           {indicators.ema6x && (
             <div className="flex flex-col gap-0.5">
-              {/* EMA principal (30) — siempre visible, click expande las otras 5 */}
-              <div
-                className="cursor-pointer"
-                onClick={() => setEma6xExpanded((p) => !p)}
-              >
+              {/* EMA principal — siempre visible, click expande las otras 5 */}
+              <div className="cursor-pointer" onClick={() => setEma6xExpanded((p) => !p)}>
                 <IndicatorPill
                   name={`EMA ${config.ema6x1 || 30}  ${ema6xExpanded ? "▾" : "▸"}`}
                   value={lastEma6x[0] !== undefined ? formatPrice(lastEma6x[0]!) : undefined}
-                  color={EMA6X_COLOR}
+                  color={config.ema6xColor1 || EMA6X_COLOR}
                   hidden={hidden.ema6x}
                   onToggleHide={() => toggleHidden("ema6x")}
                   onSettings={() => setSettingsTarget("ema6x")}
@@ -1012,18 +1032,23 @@ export function PriceChart({ symbol, timeframe }: Props) {
                 />
               </div>
               {/* Otras 5 EMAs — solo cuando está expandido */}
-              {ema6xExpanded && [1, 2, 3, 4, 5].map((i) => {
-                const period = [config.ema6x2, config.ema6x3, config.ema6x4, config.ema6x5, config.ema6x6][i - 1] || [60, 100, 200, 400, 800][i - 1];
-                return (
+              {ema6xExpanded && (
+                [
+                  { period: config.ema6x2 || 60,  color: config.ema6xColor2 || EMA6X_COLOR },
+                  { period: config.ema6x3 || 100, color: config.ema6xColor3 || EMA6X_COLOR },
+                  { period: config.ema6x4 || 200, color: config.ema6xColor4 || EMA6X_COLOR },
+                  { period: config.ema6x5 || 400, color: config.ema6xColor5 || EMA6X_COLOR },
+                  { period: config.ema6x6 || 800, color: config.ema6xColor6 || EMA6X_COLOR },
+                ].map(({ period, color }, idx) => (
                   <IndicatorPill
-                    key={i}
+                    key={idx}
                     name={`EMA ${period}`}
-                    value={lastEma6x[i] !== undefined ? formatPrice(lastEma6x[i]!) : undefined}
-                    color={EMA6X_COLOR}
+                    value={lastEma6x[idx + 1] !== undefined ? formatPrice(lastEma6x[idx + 1]!) : undefined}
+                    color={color}
                     hidden={hidden.ema6x}
                   />
-                );
-              })}
+                ))
+              )}
             </div>
           )}
         </div>

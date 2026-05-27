@@ -89,6 +89,12 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
     ema6x4: config.ema6x4,
     ema6x5: config.ema6x5,
     ema6x6: config.ema6x6,
+    ema6xColor1: config.ema6xColor1 || "#CD5C5C",
+    ema6xColor2: config.ema6xColor2 || "#CD5C5C",
+    ema6xColor3: config.ema6xColor3 || "#CD5C5C",
+    ema6xColor4: config.ema6xColor4 || "#CD5C5C",
+    ema6xColor5: config.ema6xColor5 || "#CD5C5C",
+    ema6xColor6: config.ema6xColor6 || "#CD5C5C",
   });
 
   useEffect(() => {
@@ -106,6 +112,12 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
       ema6x4: config.ema6x4,
       ema6x5: config.ema6x5,
       ema6x6: config.ema6x6,
+      ema6xColor1: config.ema6xColor1 || "#CD5C5C",
+      ema6xColor2: config.ema6xColor2 || "#CD5C5C",
+      ema6xColor3: config.ema6xColor3 || "#CD5C5C",
+      ema6xColor4: config.ema6xColor4 || "#CD5C5C",
+      ema6xColor5: config.ema6xColor5 || "#CD5C5C",
+      ema6xColor6: config.ema6xColor6 || "#CD5C5C",
     });
   }, [config, target]);
 
@@ -130,6 +142,12 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
         ema6x4: clamp(draft.ema6x4, 2, 500),
         ema6x5: clamp(draft.ema6x5, 2, 1000),
         ema6x6: clamp(draft.ema6x6, 2, 1000),
+        ema6xColor1: draft.ema6xColor1,
+        ema6xColor2: draft.ema6xColor2,
+        ema6xColor3: draft.ema6xColor3,
+        ema6xColor4: draft.ema6xColor4,
+        ema6xColor5: draft.ema6xColor5,
+        ema6xColor6: draft.ema6xColor6,
       });
   }
 
@@ -181,14 +199,28 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
         </p>
       )}
       {target === "ema6x" && (
-        <div className="grid grid-cols-3 gap-2">
-          {(["ema6x1","ema6x2","ema6x3","ema6x4","ema6x5","ema6x6"] as const).map((k, i) => (
-            <Field
-              key={k}
-              label={`EMA ${i + 1}`}
-              value={draft[k]}
-              onChange={(n) => setDraft((d) => ({ ...d, [k]: n }))}
-            />
+        <div className="flex flex-col gap-2">
+          {(
+            [
+              { period: "ema6x1", color: "ema6xColor1" },
+              { period: "ema6x2", color: "ema6xColor2" },
+              { period: "ema6x3", color: "ema6xColor3" },
+              { period: "ema6x4", color: "ema6xColor4" },
+              { period: "ema6x5", color: "ema6xColor5" },
+              { period: "ema6x6", color: "ema6xColor6" },
+            ] as const
+          ).map(({ period, color }, i) => (
+            <div key={period} className="flex items-center gap-2">
+              <ColorSwatch
+                value={draft[color]}
+                onChange={(v) => setDraft((d) => ({ ...d, [color]: v }))}
+              />
+              <Field
+                label={`EMA ${i + 1}`}
+                value={draft[period]}
+                onChange={(n) => setDraft((d) => ({ ...d, [period]: n }))}
+              />
+            </div>
           ))}
         </div>
       )}
@@ -234,6 +266,23 @@ function Field({
           if (!isNaN(n)) onChange(n);
         }}
         className="bg-tv-bg tabular-nums"
+      />
+    </label>
+  );
+}
+
+function ColorSwatch({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <label className="relative shrink-0 cursor-pointer" title="Cambiar color">
+      <span
+        className="block h-7 w-7 rounded border border-tv-border shadow-sm"
+        style={{ background: value }}
+      />
+      <input
+        type="color"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="absolute inset-0 cursor-pointer opacity-0"
       />
     </label>
   );
