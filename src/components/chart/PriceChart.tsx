@@ -129,6 +129,8 @@ export function PriceChart({ symbol, timeframe }: Props) {
   const aoRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const ema6xRefs = useRef<Array<ISeriesApi<"Line"> | null>>([null, null, null, null, null, null]);
   const smaRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const hPriceLineRef = useRef<IPriceLine | null>(null);
+  const lPriceLineRef = useRef<IPriceLine | null>(null);
   const candlesRef = useRef<Candle[]>([]);
   const priceLinesMapRef = useRef<Map<string, IPriceLine>>(new Map());
 
@@ -375,6 +377,8 @@ export function PriceChart({ symbol, timeframe }: Props) {
       aoRef.current = null;
       ema6xRefs.current = [null, null, null, null, null, null];
       smaRef.current = null;
+      hPriceLineRef.current = null;
+      lPriceLineRef.current = null;
     };
   }, []);
 
@@ -871,6 +875,30 @@ export function PriceChart({ symbol, timeframe }: Props) {
     setLastValues((prev) => ({ ...prev, sma: data.at(-1)?.value }));
   }
 
+  function updateHLPriceLines(c: { open: number; high: number; low: number; close: number }) {
+    if (!candleSeriesRef.current) return;
+    const isUp = c.close >= c.open;
+    const col = isUp ? TV_COLORS.green : TV_COLORS.red;
+    const mkOpts = (price: number) => ({
+      price,
+      color: col,
+      lineWidth: 1 as const,
+      lineStyle: 2 as const,
+      axisLabelVisible: true,
+      title: "",
+    });
+    if (hPriceLineRef.current) {
+      hPriceLineRef.current.applyOptions(mkOpts(c.high));
+    } else {
+      hPriceLineRef.current = candleSeriesRef.current.createPriceLine(mkOpts(c.high));
+    }
+    if (lPriceLineRef.current) {
+      lPriceLineRef.current.applyOptions(mkOpts(c.low));
+    } else {
+      lPriceLineRef.current = candleSeriesRef.current.createPriceLine(mkOpts(c.low));
+    }
+  }
+
   // Redraw candles when candle type changes (Candles ↔ Heikin Ashi)
   useEffect(() => {
     if (!candleSeriesRef.current || candlesRef.current.length === 0) return;
@@ -933,11 +961,21 @@ export function PriceChart({ symbol, timeframe }: Props) {
         if (klines.length > 0) {
           const last = klines[klines.length - 1];
           const prev = klines[klines.length - 2] ?? last;
+          // Reset H/L price lines for new symbol/timeframe
+          if (hPriceLineRef.current && candleSeriesRef.current) {
+            try { candleSeriesRef.current.removePriceLine(hPriceLineRef.current); } catch { /* noop */ }
+            hPriceLineRef.current = null;
+          }
+          if (lPriceLineRef.current && candleSeriesRef.current) {
+            try { candleSeriesRef.current.removePriceLine(lPriceLineRef.current); } catch { /* noop */ }
+            lPriceLineRef.current = null;
+          }
           setLastPrice({
             value: last.close,
             pct: prev.close === 0 ? 0 : ((last.close - prev.close) / prev.close) * 100,
           });
           setCurrentCandle({ open: last.open, high: last.high, low: last.low, close: last.close, time: last.time });
+          updateHLPriceLines(last);
         }
 
         const ws = getBinanceWS();
@@ -983,6 +1021,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
               pct: prev && prev.close !== 0 ? ((k.close - prev.close) / prev.close) * 100 : 0,
             });
             setCurrentCandle({ open: k.open, high: k.high, low: k.low, close: k.close, time: k.time });
+            updateHLPriceLines(k);
           },
         });
       } catch (e) {
@@ -1062,6 +1101,31 @@ export function PriceChart({ symbol, timeframe }: Props) {
       <div ref={containerRef} className="h-full w-full" />
       {measureRender}
 
+      {/* Timer overlay — right axis, just below the live price label */}
+      {(() => {
+        void renderTick;
+        if (!lastPrice || !currentCandle || !candleSeriesRef.current) return null;
+        const y = candleSeriesRef.current.priceToCoordinate(lastPrice.value);
+        if (y === null || !isFinite(y)) return null;
+        const paneH = paneOffsets[0]?.height ?? 9999;
+        if (y < 0 || y > paneH) return null;
+        const isUp = currentCandle.close >= currentCandle.open;
+        const col = isUp ? TV_COLORS.green : TV_COLORS.red;
+        return (
+          <div
+            className="pointer-events-none absolute z-10 flex w-full justify-end"
+            style={{ top: Math.round(y) + 13 }}
+          >
+            <span
+              className="px-1.5 py-px font-mono text-[11px] font-semibold text-white"
+              style={{ backgroundColor: col }}
+            >
+              {formatElapsed(elapsed)}
+            </span>
+          </div>
+        );
+      })()}
+
       {/* Top-left of main pane: symbol info + OHLC + Volume pill + EMA pills */}
       <div
         style={{ top: (paneOffsets[0]?.top ?? 0) + 12, left: 12 }}
@@ -1101,30 +1165,22 @@ export function PriceChart({ symbol, timeframe }: Props) {
           )}
         </div>
 
-        {/* Row 2: live price + H / L / timer del candle actual */}
-        <div className="flex flex-col gap-0.5">
+        {/* Row 2: precio en vivo con badge de color */}
+        <div className="flex h-7 items-center gap-2">
           {lastPrice && currentCandle ? (() => {
             const isUp = currentCandle.close >= currentCandle.open;
             const col = isUp ? TV_COLORS.green : TV_COLORS.red;
             return (
               <>
-                <div className="flex items-center gap-2">
-                  {/* Precio con fondo sólido para que resalte */}
-                  <span
-                    className="rounded px-1.5 py-0.5 text-sm font-bold text-white tabular-nums"
-                    style={{ backgroundColor: col }}
-                  >
-                    {formatPrice(lastPrice.value)}
-                  </span>
-                  <span className="text-xs tabular-nums" style={{ color: col }}>
-                    {lastPrice.pct >= 0 ? "+" : ""}{lastPrice.pct.toFixed(2)}%
-                  </span>
-                </div>
-                <div className="flex items-center gap-3 text-[11px] tabular-nums" style={{ color: col }}>
-                  <span>H <span className="font-semibold">{formatPrice(currentCandle.high)}</span></span>
-                  <span>L <span className="font-semibold">{formatPrice(currentCandle.low)}</span></span>
-                  <span className="font-mono">{formatElapsed(elapsed)}</span>
-                </div>
+                <span
+                  className="rounded px-1.5 py-0.5 text-sm font-bold text-white tabular-nums"
+                  style={{ backgroundColor: col }}
+                >
+                  {formatPrice(lastPrice.value)}
+                </span>
+                <span className="text-xs tabular-nums" style={{ color: col }}>
+                  {lastPrice.pct >= 0 ? "+" : ""}{lastPrice.pct.toFixed(2)}%
+                </span>
               </>
             );
           })() : lastPrice ? (
