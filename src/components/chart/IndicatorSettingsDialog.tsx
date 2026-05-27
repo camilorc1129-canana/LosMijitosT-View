@@ -262,7 +262,14 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
         </div>
       )}
       {target === "ema6x" && (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1">
+          {/* Header row */}
+          <div className="mb-0.5 flex items-center gap-1.5 px-0.5">
+            <span className="w-6 shrink-0" />
+            <span className="w-10 shrink-0 text-[9px] font-semibold uppercase tracking-wider text-tv-text-muted">EMA</span>
+            <span className="flex-1 text-[9px] font-semibold uppercase tracking-wider text-tv-text-muted">Período</span>
+            <span className="text-[9px] font-semibold uppercase tracking-wider text-tv-text-muted">Grosor</span>
+          </div>
           {(
             [
               { period: "ema6x1", color: "ema6xColor1", width: "ema6xWidth1" },
@@ -273,22 +280,40 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
               { period: "ema6x6", color: "ema6xColor6", width: "ema6xWidth6" },
             ] as const
           ).map(({ period, color, width }, i) => (
-            <div key={period} className="flex flex-col gap-1.5 border-b border-tv-border pb-3 last:border-0 last:pb-0">
-              <div className="flex items-center gap-2">
-                <ColorSwatch
-                  value={draft[color]}
-                  onChange={(v) => setDraft((d) => ({ ...d, [color]: v }))}
-                />
-                <Field
-                  label={`EMA ${i + 1}`}
-                  value={draft[period]}
-                  onChange={(n) => setDraft((d) => ({ ...d, [period]: n }))}
-                />
-              </div>
-              <WidthPicker
-                value={draft[width]}
-                onChange={(n) => setDraft((d) => ({ ...d, [width]: n }))}
+            <div key={period} className="flex items-center gap-1.5">
+              <ColorSwatch
+                value={draft[color]}
+                onChange={(v) => setDraft((d) => ({ ...d, [color]: v }))}
               />
+              <span className="w-10 shrink-0 text-[10px] text-tv-text-muted">{i + 1}</span>
+              <Input
+                type="number"
+                min={2}
+                max={1000}
+                value={draft[period]}
+                onChange={(e) => {
+                  const n = parseInt(e.target.value, 10);
+                  if (!isNaN(n)) setDraft((d) => ({ ...d, [period]: n }));
+                }}
+                className="h-7 min-w-0 flex-1 bg-tv-bg text-xs tabular-nums"
+              />
+              <div className="flex shrink-0 gap-0.5">
+                {([1, 2, 3, 4] as const).map((w) => (
+                  <button
+                    key={w}
+                    type="button"
+                    onClick={() => setDraft((d) => ({ ...d, [width]: w }))}
+                    title={`Grosor ${w}`}
+                    className={`flex h-6 w-6 items-center justify-center rounded border transition-colors ${
+                      draft[width] === w
+                        ? "border-tv-blue bg-tv-blue/20"
+                        : "border-tv-border hover:border-tv-text-muted"
+                    }`}
+                  >
+                    <div className="w-3 rounded-full bg-tv-text" style={{ height: w }} />
+                  </button>
+                ))}
+              </div>
             </div>
           ))}
         </div>
