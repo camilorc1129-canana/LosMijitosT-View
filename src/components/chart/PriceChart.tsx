@@ -666,13 +666,6 @@ export function PriceChart({ symbol, timeframe }: Props) {
     smaRef.current?.applyOptions({ color: config.smaColor || "#26a69a" });
   }, [config.smaColor]);
 
-  // Price line color follows current candle direction
-  useEffect(() => {
-    if (!candleSeriesRef.current || !currentCandle) return;
-    const col = currentCandle.close >= currentCandle.open ? TV_COLORS.green : TV_COLORS.red;
-    candleSeriesRef.current.applyOptions({ priceLineColor: col });
-  }, [currentCandle?.close, currentCandle?.open]);
-
   // React to line width changes
   useEffect(() => {
     ema20Ref.current?.applyOptions({ lineWidth: (config.ema20Width || 1) as 1 | 2 | 3 | 4 });
@@ -894,6 +887,11 @@ export function PriceChart({ symbol, timeframe }: Props) {
         })),
       );
     }
+    const lastDisplay = display.at(-1);
+    if (lastDisplay) {
+      const col = lastDisplay.close >= lastDisplay.open ? TV_COLORS.green : TV_COLORS.red;
+      candleSeriesRef.current.applyOptions({ priceLineColor: col });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candleType]);
 
@@ -945,6 +943,12 @@ export function PriceChart({ symbol, timeframe }: Props) {
             pct: prev.close === 0 ? 0 : ((last.close - prev.close) / prev.close) * 100,
           });
           setCurrentCandle({ open: last.open, high: last.high, low: last.low, close: last.close, time: last.time });
+          // Set price line color from the displayed candle (handles HA mode too)
+          const lastDisplay = display.at(-1);
+          if (lastDisplay && candleSeriesRef.current) {
+            const col = lastDisplay.close >= lastDisplay.open ? TV_COLORS.green : TV_COLORS.red;
+            candleSeriesRef.current.applyOptions({ priceLineColor: col });
+          }
         }
 
         const ws = getBinanceWS();
@@ -990,6 +994,10 @@ export function PriceChart({ symbol, timeframe }: Props) {
               pct: prev && prev.close !== 0 ? ((k.close - prev.close) / prev.close) * 100 : 0,
             });
             setCurrentCandle({ open: k.open, high: k.high, low: k.low, close: k.close, time: k.time });
+            // Update price line color synchronously using the displayed candle direction
+            candleSeriesRef.current.applyOptions({
+              priceLineColor: lastDisplay.close >= lastDisplay.open ? TV_COLORS.green : TV_COLORS.red,
+            });
           },
         });
       } catch (e) {
