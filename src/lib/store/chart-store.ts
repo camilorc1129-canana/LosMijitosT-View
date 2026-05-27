@@ -15,6 +15,7 @@ export type IndicatorKey =
   | "ema6x";
 
 export type DrawingTool = "cursor" | "hline" | "measure" | "eraser";
+export type CandleType = "candles" | "heikinashi";
 
 export interface PriceLine {
   id: string;
@@ -97,6 +98,7 @@ export const DEFAULT_WATCHLIST = [
 interface ChartState {
   symbol: string;
   timeframe: Timeframe;
+  candleType: CandleType;
   /** Indicator is added to the chart (appears in pill + renders unless hidden) */
   indicators: Record<IndicatorKey, boolean>;
   /** Indicator is hidden (eye icon off) — kept in pill list, just not rendered */
@@ -115,6 +117,7 @@ interface ChartState {
   // Actions
   setSymbol: (s: string) => void;
   setTimeframe: (t: Timeframe) => void;
+  setCandleType: (t: CandleType) => void;
   toggleIndicator: (key: IndicatorKey) => void;
   removeIndicator: (key: IndicatorKey) => void;
   toggleHidden: (key: IndicatorKey) => void;
@@ -154,6 +157,7 @@ export const useChartStore = create<ChartState>()(
         ema6x: false,
       },
       config: { ...DEFAULT_CONFIG },
+      candleType: "candles" as CandleType,
       watchlist: DEFAULT_WATCHLIST,
       tool: "cursor",
       priceLines: [],
@@ -162,6 +166,7 @@ export const useChartStore = create<ChartState>()(
 
       setSymbol: (symbol) => set({ symbol }),
       setTimeframe: (timeframe) => set({ timeframe }),
+      setCandleType: (candleType) => set({ candleType }),
       toggleIndicator: (key) =>
         set((s) => ({
           indicators: { ...s.indicators, [key]: !s.indicators[key] },
@@ -238,6 +243,7 @@ export const useChartStore = create<ChartState>()(
       partialize: (s) => ({
         symbol: s.symbol,
         timeframe: s.timeframe,
+        candleType: s.candleType,
         indicators: s.indicators,
         hidden: s.hidden,
         config: s.config,

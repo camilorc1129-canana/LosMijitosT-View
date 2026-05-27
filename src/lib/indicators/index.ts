@@ -123,6 +123,35 @@ export function macd(
 }
 
 /**
+ * Heikin Ashi — transforma velas normales a velas HA.
+ * haClose = (O+H+L+C)/4
+ * haOpen  = (prevHaOpen + prevHaClose) / 2  [primer bar: (O+C)/2]
+ * haHigh  = max(H, haOpen, haClose)
+ * haLow   = min(L, haOpen, haClose)
+ */
+export function heikinAshi(candles: Candle[]): Candle[] {
+  if (candles.length === 0) return [];
+  const out: Candle[] = [];
+  for (let i = 0; i < candles.length; i++) {
+    const c = candles[i];
+    const haClose = (c.open + c.high + c.low + c.close) / 4;
+    const haOpen =
+      i === 0
+        ? (c.open + c.close) / 2
+        : (out[i - 1].open + out[i - 1].close) / 2;
+    out.push({
+      time: c.time,
+      open: haOpen,
+      high: Math.max(c.high, haOpen, haClose),
+      low: Math.min(c.low, haOpen, haClose),
+      close: haClose,
+      volume: c.volume,
+    });
+  }
+  return out;
+}
+
+/**
  * Awesome Oscillator — SMA(hl2, 5) − SMA(hl2, 34).
  * Green bar when AO rising (diff > 0), red when falling (diff ≤ 0).
  */

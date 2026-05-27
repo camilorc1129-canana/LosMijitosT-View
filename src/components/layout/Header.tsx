@@ -4,6 +4,7 @@ import { Code2, Zap } from "lucide-react";
 import { SymbolSelector } from "@/components/chart/SymbolSelector";
 import { TimeframeSelector } from "@/components/chart/TimeframeSelector";
 import { IndicatorMenu } from "@/components/chart/IndicatorMenu";
+import { CandleTypeSelector } from "@/components/chart/CandleTypeSelector";
 import { Separator } from "@/components/ui/separator";
 
 export function Header() {
@@ -29,6 +30,8 @@ export function Header() {
         <SymbolSelector />
         <Separator orientation="vertical" className="h-6 bg-tv-border" />
         <TimeframeSelector />
+        <Separator orientation="vertical" className="h-6 bg-tv-border" />
+        <CandleTypeSelector />
         <Separator orientation="vertical" className="mx-1 h-6 bg-tv-border" />
         <IndicatorMenu />
       </div>

@@ -14,7 +14,7 @@ import {
 } from "lightweight-charts";
 import { fetchKlines } from "@/lib/binance/rest";
 import { getBinanceWS } from "@/lib/binance/ws";
-import { ema, rsi, macd, awesomeOscillator } from "@/lib/indicators";
+import { ema, rsi, macd, awesomeOscillator, heikinAshi } from "@/lib/indicators";
 import type { Candle, Timeframe } from "@/lib/binance/types";
 import {
   INDICATOR_COLORS,
@@ -22,6 +22,7 @@ import {
   EMA6X_WIDTHS,
   useChartStore,
   type IndicatorKey,
+  type CandleType,
 } from "@/lib/store/chart-store";
 import { formatPrice, formatVolume } from "@/lib/format";
 import { IndicatorPill } from "./IndicatorPill";
@@ -116,6 +117,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
   const indicators = useChartStore((s) => s.indicators);
   const hidden = useChartStore((s) => s.hidden);
   const config = useChartStore((s) => s.config);
+  const candleType = useChartStore((s) => s.candleType);
   const tool = useChartStore((s) => s.tool);
   const priceLines = useChartStore((s) => s.priceLines);
   const addPriceLine = useChartStore((s) => s.addPriceLine);
@@ -132,6 +134,8 @@ export function PriceChart({ symbol, timeframe }: Props) {
   symbolRef.current = symbol;
   const configRef = useRef(config);
   configRef.current = config;
+  const candleTypeRef = useRef<CandleType>(candleType);
+  candleTypeRef.current = candleType;
 
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [lastPrice, setLastPrice] = useState<{ value: number; pct: number } | null>(null);
@@ -628,6 +632,10 @@ export function PriceChart({ symbol, timeframe }: Props) {
     if (tool !== "measure") setMeasure(INITIAL_MEASURE);
   }, [tool]);
 
+  function toDisplay(raw: Candle[]): Candle[] {
+    return candleTypeRef.current === "heikinashi" ? heikinAshi(raw) : raw;
+  }
+
   function updateEMAs() {
     const c = candlesRef.current;
     if (c.length === 0) return;
@@ -749,6 +757,25 @@ export function PriceChart({ symbol, timeframe }: Props) {
     }));
   }
 
+  // Redraw candles when candle type changes (Candles ↔ Heikin Ashi)
+  useEffect(() => {
+    if (!candleSeriesRef.current || candlesRef.current.length === 0) return;
+    const display = toDisplay(candlesRef.current);
+    candleSeriesRef.current.setData(
+      display.map((k) => ({ time: k.time as UTCTimestamp, open: k.open, high: k.high, low: k.low, close: k.close })),
+    );
+    if (volumeSeriesRef.current) {
+      volumeSeriesRef.current.setData(
+        display.map((k) => ({
+          time: k.time as UTCTimestamp,
+          value: k.volume,
+          color: k.close >= k.open ? `${TV_COLORS.green}66` : `${TV_COLORS.red}66`,
+        })),
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candleType]);
+
   // Load historical data + subscribe live
   useEffect(() => {
     let unsub: (() => void) | null = null;
@@ -759,9 +786,10 @@ export function PriceChart({ symbol, timeframe }: Props) {
         const klines = await fetchKlines(symbol, timeframe, 1000);
         if (cancelled) return;
         candlesRef.current = klines;
+        const display = toDisplay(klines);
         if (candleSeriesRef.current) {
           candleSeriesRef.current.setData(
-            klines.map((k) => ({
+            display.map((k) => ({
               time: k.time as UTCTimestamp,
               open: k.open,
               high: k.high,
@@ -772,7 +800,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
         }
         if (volumeSeriesRef.current) {
           volumeSeriesRef.current.setData(
-            klines.map((k) => ({
+            display.map((k) => ({
               time: k.time as UTCTimestamp,
               value: k.volume,
               color: k.close >= k.open ? `${TV_COLORS.green}66` : `${TV_COLORS.red}66`,
@@ -812,18 +840,19 @@ export function PriceChart({ symbol, timeframe }: Props) {
             } else {
               return;
             }
+            const lastDisplay = toDisplay(candlesRef.current).at(-1)!;
             candleSeriesRef.current.update({
-              time: k.time as UTCTimestamp,
-              open: k.open,
-              high: k.high,
-              low: k.low,
-              close: k.close,
+              time: lastDisplay.time as UTCTimestamp,
+              open: lastDisplay.open,
+              high: lastDisplay.high,
+              low: lastDisplay.low,
+              close: lastDisplay.close,
             });
             if (volumeSeriesRef.current) {
               volumeSeriesRef.current.update({
                 time: k.time as UTCTimestamp,
                 value: k.volume,
-                color: k.close >= k.open ? `${TV_COLORS.green}66` : `${TV_COLORS.red}66`,
+                color: lastDisplay.close >= lastDisplay.open ? `${TV_COLORS.green}66` : `${TV_COLORS.red}66`,
               });
             }
             updateEMAs();
