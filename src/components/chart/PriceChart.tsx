@@ -666,6 +666,13 @@ export function PriceChart({ symbol, timeframe }: Props) {
     smaRef.current?.applyOptions({ color: config.smaColor || "#26a69a" });
   }, [config.smaColor]);
 
+  // Price line color follows current candle direction
+  useEffect(() => {
+    if (!candleSeriesRef.current || !currentCandle) return;
+    const col = currentCandle.close >= currentCandle.open ? TV_COLORS.green : TV_COLORS.red;
+    candleSeriesRef.current.applyOptions({ priceLineColor: col });
+  }, [currentCandle?.close, currentCandle?.open]);
+
   // React to line width changes
   useEffect(() => {
     ema20Ref.current?.applyOptions({ lineWidth: (config.ema20Width || 1) as 1 | 2 | 3 | 4 });
