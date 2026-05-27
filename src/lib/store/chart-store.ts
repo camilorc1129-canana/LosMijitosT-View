@@ -46,6 +46,16 @@ export interface IndicatorConfig {
   ema6xColor6: string;
   smaLength: number;
   smaColor: string;
+  ema20Width: number;
+  ema50Width: number;
+  ema200Width: number;
+  smaWidth: number;
+  ema6xWidth1: number;
+  ema6xWidth2: number;
+  ema6xWidth3: number;
+  ema6xWidth4: number;
+  ema6xWidth5: number;
+  ema6xWidth6: number;
 }
 
 export const DEFAULT_CONFIG: IndicatorConfig = {
@@ -70,6 +80,16 @@ export const DEFAULT_CONFIG: IndicatorConfig = {
   ema6xColor6: "#CD5C5C",
   smaLength: 9,
   smaColor: "#26a69a",
+  ema20Width: 1,
+  ema50Width: 1,
+  ema200Width: 2,
+  smaWidth: 1,
+  ema6xWidth1: 2,
+  ema6xWidth2: 3,
+  ema6xWidth3: 2,
+  ema6xWidth4: 2,
+  ema6xWidth5: 2,
+  ema6xWidth6: 2,
 };
 
 export const EMA6X_COLOR = "#CD5C5C";
@@ -228,7 +248,7 @@ export const useChartStore = create<ChartState>()(
     }),
     {
       name: "tv-gratis-chart-state",
-      version: 5,
+      version: 6,
       migrate: (persisted: unknown) => {
         const s = (persisted ?? {}) as Record<string, unknown>;
         return {

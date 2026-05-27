@@ -19,7 +19,6 @@ import type { Candle, Timeframe } from "@/lib/binance/types";
 import {
   INDICATOR_COLORS,
   EMA6X_COLOR,
-  EMA6X_WIDTHS,
   useChartStore,
   type IndicatorKey,
   type CandleType,
@@ -202,21 +201,21 @@ export function PriceChart({ symbol, timeframe }: Props) {
     // PANE 0 — EMAs primero (debajo), velas al final (encima)
     ema20Ref.current = chart.addSeries(LineSeries, {
       color: INDICATOR_COLORS.ema20,
-      lineWidth: 1,
+      lineWidth: (configRef.current.ema20Width || 1) as 1 | 2 | 3 | 4,
       priceLineVisible: false,
       lastValueVisible: false,
       crosshairMarkerVisible: false,
     });
     ema50Ref.current = chart.addSeries(LineSeries, {
       color: INDICATOR_COLORS.ema50,
-      lineWidth: 1,
+      lineWidth: (configRef.current.ema50Width || 1) as 1 | 2 | 3 | 4,
       priceLineVisible: false,
       lastValueVisible: false,
       crosshairMarkerVisible: false,
     });
     ema200Ref.current = chart.addSeries(LineSeries, {
       color: INDICATOR_COLORS.ema200,
-      lineWidth: 2,
+      lineWidth: (configRef.current.ema200Width || 2) as 1 | 2 | 3 | 4,
       priceLineVisible: false,
       lastValueVisible: false,
       crosshairMarkerVisible: false,
@@ -517,23 +516,32 @@ export function PriceChart({ symbol, timeframe }: Props) {
     if (!chartRef.current) return;
     if (indicators.ema6x) {
       const refs = ema6xRefs.current;
+      const cfg = configRef.current;
       const ema6xColors = [
-        configRef.current.ema6xColor1 || EMA6X_COLOR,
-        configRef.current.ema6xColor2 || EMA6X_COLOR,
-        configRef.current.ema6xColor3 || EMA6X_COLOR,
-        configRef.current.ema6xColor4 || EMA6X_COLOR,
-        configRef.current.ema6xColor5 || EMA6X_COLOR,
-        configRef.current.ema6xColor6 || EMA6X_COLOR,
+        cfg.ema6xColor1 || EMA6X_COLOR,
+        cfg.ema6xColor2 || EMA6X_COLOR,
+        cfg.ema6xColor3 || EMA6X_COLOR,
+        cfg.ema6xColor4 || EMA6X_COLOR,
+        cfg.ema6xColor5 || EMA6X_COLOR,
+        cfg.ema6xColor6 || EMA6X_COLOR,
+      ];
+      const ema6xWidths = [
+        (cfg.ema6xWidth1 || 2) as 1 | 2 | 3 | 4,
+        (cfg.ema6xWidth2 || 3) as 1 | 2 | 3 | 4,
+        (cfg.ema6xWidth3 || 2) as 1 | 2 | 3 | 4,
+        (cfg.ema6xWidth4 || 2) as 1 | 2 | 3 | 4,
+        (cfg.ema6xWidth5 || 2) as 1 | 2 | 3 | 4,
+        (cfg.ema6xWidth6 || 2) as 1 | 2 | 3 | 4,
       ];
       for (let i = 0; i < 6; i++) {
         if (!refs[i]) {
           refs[i] = chartRef.current.addSeries(
             LineSeries,
-            { color: ema6xColors[i], lineWidth: EMA6X_WIDTHS[i], priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false },
+            { color: ema6xColors[i], lineWidth: ema6xWidths[i], priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false },
             0,
           );
         } else {
-          refs[i]!.applyOptions({ color: ema6xColors[i], lineWidth: EMA6X_WIDTHS[i] });
+          refs[i]!.applyOptions({ color: ema6xColors[i], lineWidth: ema6xWidths[i] });
         }
       }
       updateEMA6x();
@@ -557,7 +565,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
         LineSeries,
         {
           color: configRef.current.smaColor || "#26a69a",
-          lineWidth: 1,
+          lineWidth: (configRef.current.smaWidth || 1) as 1 | 2 | 3 | 4,
           priceLineVisible: false,
           lastValueVisible: false,
           crosshairMarkerVisible: false,
@@ -629,6 +637,35 @@ export function PriceChart({ symbol, timeframe }: Props) {
   useEffect(() => {
     smaRef.current?.applyOptions({ color: config.smaColor || "#26a69a" });
   }, [config.smaColor]);
+
+  // React to line width changes
+  useEffect(() => {
+    ema20Ref.current?.applyOptions({ lineWidth: (config.ema20Width || 1) as 1 | 2 | 3 | 4 });
+  }, [config.ema20Width]);
+
+  useEffect(() => {
+    ema50Ref.current?.applyOptions({ lineWidth: (config.ema50Width || 1) as 1 | 2 | 3 | 4 });
+  }, [config.ema50Width]);
+
+  useEffect(() => {
+    ema200Ref.current?.applyOptions({ lineWidth: (config.ema200Width || 2) as 1 | 2 | 3 | 4 });
+  }, [config.ema200Width]);
+
+  useEffect(() => {
+    smaRef.current?.applyOptions({ lineWidth: (config.smaWidth || 1) as 1 | 2 | 3 | 4 });
+  }, [config.smaWidth]);
+
+  useEffect(() => {
+    const widths: (1 | 2 | 3 | 4)[] = [
+      (config.ema6xWidth1 || 2) as 1 | 2 | 3 | 4,
+      (config.ema6xWidth2 || 3) as 1 | 2 | 3 | 4,
+      (config.ema6xWidth3 || 2) as 1 | 2 | 3 | 4,
+      (config.ema6xWidth4 || 2) as 1 | 2 | 3 | 4,
+      (config.ema6xWidth5 || 2) as 1 | 2 | 3 | 4,
+      (config.ema6xWidth6 || 2) as 1 | 2 | 3 | 4,
+    ];
+    ema6xRefs.current.forEach((ref, i) => ref?.applyOptions({ lineWidth: widths[i] }));
+  }, [config.ema6xWidth1, config.ema6xWidth2, config.ema6xWidth3, config.ema6xWidth4, config.ema6xWidth5, config.ema6xWidth6]);
 
   // Sync price lines from store to the candle series
   useEffect(() => {

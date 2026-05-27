@@ -98,6 +98,16 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
     ema6xColor6: config.ema6xColor6 || "#CD5C5C",
     smaLength: config.smaLength,
     smaColor: config.smaColor || "#26a69a",
+    ema20Width: config.ema20Width || 1,
+    ema50Width: config.ema50Width || 1,
+    ema200Width: config.ema200Width || 2,
+    smaWidth: config.smaWidth || 1,
+    ema6xWidth1: config.ema6xWidth1 || 2,
+    ema6xWidth2: config.ema6xWidth2 || 3,
+    ema6xWidth3: config.ema6xWidth3 || 2,
+    ema6xWidth4: config.ema6xWidth4 || 2,
+    ema6xWidth5: config.ema6xWidth5 || 2,
+    ema6xWidth6: config.ema6xWidth6 || 2,
   });
 
   useEffect(() => {
@@ -123,13 +133,23 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
       ema6xColor6: config.ema6xColor6 || "#CD5C5C",
       smaLength: config.smaLength,
       smaColor: config.smaColor || "#26a69a",
+      ema20Width: config.ema20Width || 1,
+      ema50Width: config.ema50Width || 1,
+      ema200Width: config.ema200Width || 2,
+      smaWidth: config.smaWidth || 1,
+      ema6xWidth1: config.ema6xWidth1 || 2,
+      ema6xWidth2: config.ema6xWidth2 || 3,
+      ema6xWidth3: config.ema6xWidth3 || 2,
+      ema6xWidth4: config.ema6xWidth4 || 2,
+      ema6xWidth5: config.ema6xWidth5 || 2,
+      ema6xWidth6: config.ema6xWidth6 || 2,
     });
   }, [config, target]);
 
   function save() {
-    if (target === "ema20") onSave({ ema20: clamp(draft.ema20, 2, 500) });
-    else if (target === "ema50") onSave({ ema50: clamp(draft.ema50, 2, 500) });
-    else if (target === "ema200") onSave({ ema200: clamp(draft.ema200, 2, 500) });
+    if (target === "ema20") onSave({ ema20: clamp(draft.ema20, 2, 500), ema20Width: draft.ema20Width });
+    else if (target === "ema50") onSave({ ema50: clamp(draft.ema50, 2, 500), ema50Width: draft.ema50Width });
+    else if (target === "ema200") onSave({ ema200: clamp(draft.ema200, 2, 500), ema200Width: draft.ema200Width });
     else if (target === "rsi") onSave({ rsi: clamp(draft.rsi, 2, 100) });
     else if (target === "macd")
       onSave({
@@ -140,7 +160,7 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
     else if (target === "volume") onSave({});
     else if (target === "ao") onSave({});
     else if (target === "sma")
-      onSave({ smaLength: clamp(draft.smaLength, 2, 500), smaColor: draft.smaColor });
+      onSave({ smaLength: clamp(draft.smaLength, 2, 500), smaColor: draft.smaColor, smaWidth: draft.smaWidth });
     else if (target === "ema6x")
       onSave({
         ema6x1: clamp(draft.ema6x1, 2, 500),
@@ -155,17 +175,34 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
         ema6xColor4: draft.ema6xColor4,
         ema6xColor5: draft.ema6xColor5,
         ema6xColor6: draft.ema6xColor6,
+        ema6xWidth1: draft.ema6xWidth1,
+        ema6xWidth2: draft.ema6xWidth2,
+        ema6xWidth3: draft.ema6xWidth3,
+        ema6xWidth4: draft.ema6xWidth4,
+        ema6xWidth5: draft.ema6xWidth5,
+        ema6xWidth6: draft.ema6xWidth6,
       });
   }
 
   return (
     <div className="flex flex-col gap-3">
       {(target === "ema20" || target === "ema50" || target === "ema200") && (
-        <Field
-          label="Período"
-          value={draft[target]}
-          onChange={(n) => setDraft((d) => ({ ...d, [target]: n }))}
-        />
+        <div className="flex flex-col gap-3">
+          <Field
+            label="Período"
+            value={draft[target]}
+            onChange={(n) => setDraft((d) => ({ ...d, [target]: n }))}
+          />
+          <WidthPicker
+            value={target === "ema20" ? draft.ema20Width : target === "ema50" ? draft.ema50Width : draft.ema200Width}
+            onChange={(n) =>
+              setDraft((d) => ({
+                ...d,
+                ...(target === "ema20" ? { ema20Width: n } : target === "ema50" ? { ema50Width: n } : { ema200Width: n }),
+              }))
+            }
+          />
+        </div>
       )}
       {target === "rsi" && (
         <Field
@@ -206,39 +243,51 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
         </p>
       )}
       {target === "sma" && (
-        <div className="flex items-center gap-2">
-          <ColorSwatch
-            value={draft.smaColor}
-            onChange={(v) => setDraft((d) => ({ ...d, smaColor: v }))}
-          />
-          <Field
-            label="Período"
-            value={draft.smaLength}
-            onChange={(n) => setDraft((d) => ({ ...d, smaLength: n }))}
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <ColorSwatch
+              value={draft.smaColor}
+              onChange={(v) => setDraft((d) => ({ ...d, smaColor: v }))}
+            />
+            <Field
+              label="Período"
+              value={draft.smaLength}
+              onChange={(n) => setDraft((d) => ({ ...d, smaLength: n }))}
+            />
+          </div>
+          <WidthPicker
+            value={draft.smaWidth}
+            onChange={(n) => setDraft((d) => ({ ...d, smaWidth: n }))}
           />
         </div>
       )}
       {target === "ema6x" && (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-3">
           {(
             [
-              { period: "ema6x1", color: "ema6xColor1" },
-              { period: "ema6x2", color: "ema6xColor2" },
-              { period: "ema6x3", color: "ema6xColor3" },
-              { period: "ema6x4", color: "ema6xColor4" },
-              { period: "ema6x5", color: "ema6xColor5" },
-              { period: "ema6x6", color: "ema6xColor6" },
+              { period: "ema6x1", color: "ema6xColor1", width: "ema6xWidth1" },
+              { period: "ema6x2", color: "ema6xColor2", width: "ema6xWidth2" },
+              { period: "ema6x3", color: "ema6xColor3", width: "ema6xWidth3" },
+              { period: "ema6x4", color: "ema6xColor4", width: "ema6xWidth4" },
+              { period: "ema6x5", color: "ema6xColor5", width: "ema6xWidth5" },
+              { period: "ema6x6", color: "ema6xColor6", width: "ema6xWidth6" },
             ] as const
-          ).map(({ period, color }, i) => (
-            <div key={period} className="flex items-center gap-2">
-              <ColorSwatch
-                value={draft[color]}
-                onChange={(v) => setDraft((d) => ({ ...d, [color]: v }))}
-              />
-              <Field
-                label={`EMA ${i + 1}`}
-                value={draft[period]}
-                onChange={(n) => setDraft((d) => ({ ...d, [period]: n }))}
+          ).map(({ period, color, width }, i) => (
+            <div key={period} className="flex flex-col gap-1.5 border-b border-tv-border pb-3 last:border-0 last:pb-0">
+              <div className="flex items-center gap-2">
+                <ColorSwatch
+                  value={draft[color]}
+                  onChange={(v) => setDraft((d) => ({ ...d, [color]: v }))}
+                />
+                <Field
+                  label={`EMA ${i + 1}`}
+                  value={draft[period]}
+                  onChange={(n) => setDraft((d) => ({ ...d, [period]: n }))}
+                />
+              </div>
+              <WidthPicker
+                value={draft[width]}
+                onChange={(n) => setDraft((d) => ({ ...d, [width]: n }))}
               />
             </div>
           ))}
@@ -305,6 +354,33 @@ function ColorSwatch({ value, onChange }: { value: string; onChange: (v: string)
         className="absolute inset-0 cursor-pointer opacity-0"
       />
     </label>
+  );
+}
+
+function WidthPicker({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-tv-text-muted">
+        Grosor
+      </span>
+      <div className="flex gap-1.5">
+        {([1, 2, 3, 4] as const).map((w) => (
+          <button
+            key={w}
+            type="button"
+            onClick={() => onChange(w)}
+            title={`Grosor ${w}`}
+            className={`flex h-8 w-10 items-center justify-center rounded border transition-colors ${
+              value === w
+                ? "border-tv-blue bg-tv-blue/20"
+                : "border-tv-border hover:border-tv-text-muted"
+            }`}
+          >
+            <div className="w-5 rounded-full bg-tv-text" style={{ height: w }} />
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
