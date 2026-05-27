@@ -197,18 +197,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
       autoSize: true,
     });
 
-    // PANE 0 — Candles + EMAs
-    candleSeriesRef.current = chart.addSeries(CandlestickSeries, {
-      upColor: TV_COLORS.green,
-      downColor: TV_COLORS.red,
-      borderUpColor: TV_COLORS.green,
-      borderDownColor: TV_COLORS.red,
-      wickUpColor: TV_COLORS.green,
-      wickDownColor: TV_COLORS.red,
-      priceLineColor: TV_COLORS.textMuted,
-      priceLineStyle: 2,
-    });
-
+    // PANE 0 — EMAs primero (debajo), velas al final (encima)
     ema20Ref.current = chart.addSeries(LineSeries, {
       color: INDICATOR_COLORS.ema20,
       lineWidth: 1,
@@ -229,6 +218,18 @@ export function PriceChart({ symbol, timeframe }: Props) {
       priceLineVisible: false,
       lastValueVisible: false,
       crosshairMarkerVisible: false,
+    });
+
+    // Velas al final → se renderizan encima de las EMAs
+    candleSeriesRef.current = chart.addSeries(CandlestickSeries, {
+      upColor: TV_COLORS.green,
+      downColor: TV_COLORS.red,
+      borderUpColor: TV_COLORS.green,
+      borderDownColor: TV_COLORS.red,
+      wickUpColor: TV_COLORS.green,
+      wickDownColor: TV_COLORS.red,
+      priceLineColor: TV_COLORS.textMuted,
+      priceLineStyle: 2,
     });
 
     chartRef.current = chart;
@@ -637,7 +638,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
   }
 
   function updateEMAs() {
-    const c = candlesRef.current;
+    const c = toDisplay(candlesRef.current);
     if (c.length === 0) return;
     const cfg = configRef.current;
     let last20: number | undefined;
@@ -676,7 +677,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
   }
 
   function updateRSI() {
-    const c = candlesRef.current;
+    const c = toDisplay(candlesRef.current);
     if (c.length === 0 || !rsiRef.current) return;
     const cfg = configRef.current;
     const data = rsi(c, cfg.rsi).map((p) => ({
@@ -698,7 +699,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
   }
 
   function updateEMA6x() {
-    const c = candlesRef.current;
+    const c = toDisplay(candlesRef.current);
     if (c.length === 0) return;
     const cfg = configRef.current;
     const periods = [
@@ -721,7 +722,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
   }
 
   function updateAO() {
-    const c = candlesRef.current;
+    const c = toDisplay(candlesRef.current);
     if (c.length === 0 || !aoRef.current) return;
     const data = awesomeOscillator(c);
     aoRef.current.setData(
@@ -731,7 +732,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
   }
 
   function updateMACD() {
-    const c = candlesRef.current;
+    const c = toDisplay(candlesRef.current);
     if (c.length === 0 || !macdRef.current) return;
     const cfg = configRef.current;
     const m = macd(c, cfg.macdFast, cfg.macdSlow, cfg.macdSignal);
