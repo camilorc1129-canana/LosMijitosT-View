@@ -118,7 +118,7 @@ export const DEFAULT_WATCHLIST = [
   "ADAUSDT",
   "AVAXUSDT",
   "LINKUSDT",
-  "MATICUSDT",
+  "POLUSDT",
 ];
 
 interface ChartState {
@@ -248,11 +248,18 @@ export const useChartStore = create<ChartState>()(
     }),
     {
       name: "tv-gratis-chart-state",
-      version: 6,
+      version: 7,
       migrate: (persisted: unknown) => {
         const s = (persisted ?? {}) as Record<string, unknown>;
+        // Drop delisted pairs (MATICUSDT was rebranded to POLUSDT in Sep 2024)
+        const cleanedWatchlist = Array.isArray(s.watchlist)
+          ? (s.watchlist as string[]).filter((sym) => sym !== "MATICUSDT")
+          : DEFAULT_WATCHLIST;
         return {
           ...s,
+          // Reset symbol if it was a delisted pair
+          symbol: s.symbol === "MATICUSDT" ? "BTCUSDT" : s.symbol,
+          watchlist: cleanedWatchlist,
           // Merge config with defaults so new fields always exist
           config: { ...DEFAULT_CONFIG, ...(s.config as object | undefined) },
           // Merge indicators/hidden so new keys always exist

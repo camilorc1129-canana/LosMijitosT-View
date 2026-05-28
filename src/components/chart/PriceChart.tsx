@@ -57,6 +57,12 @@ function formatElapsed(seconds: number): string {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
+const TIMEFRAME_SECONDS: Record<Timeframe, number> = {
+  "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
+  "1h": 3600, "2h": 7200, "4h": 14400, "6h": 21600, "8h": 28800, "12h": 43200,
+  "1d": 86400, "3d": 259200, "1w": 604800, "1M": 2592000,
+};
+
 interface LiveCandle {
   open: number;
   high: number;
@@ -1125,7 +1131,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
               className="flex h-5 items-center border-t border-white/30 px-1.5 font-mono text-[11px] font-semibold text-white"
               style={{ backgroundColor: col }}
             >
-              {formatElapsed(elapsed)}
+              {elapsed > TIMEFRAME_SECONDS[timeframe] * 2 ? "—" : formatElapsed(elapsed)}
             </span>
           </div>
         );
