@@ -167,7 +167,6 @@ export function PriceChart({ symbol, timeframe }: Props) {
   const [renderTick, setRenderTick] = useState(0);
   const measureRef = useRef(measure);
   measureRef.current = measure;
-  const lastDisplayCloseRef = useRef<number | null>(null);
 
   // Tick every second to keep elapsed time current
   useEffect(() => {
@@ -897,7 +896,13 @@ export function PriceChart({ symbol, timeframe }: Props) {
     if (lastDisplay) {
       const col = lastDisplay.close >= lastDisplay.open ? TV_COLORS.green : TV_COLORS.red;
       candleSeriesRef.current.applyOptions({ priceLineColor: col });
-      lastDisplayCloseRef.current = lastDisplay.close;
+      setCurrentCandle({
+        open: lastDisplay.open,
+        high: lastDisplay.high,
+        low: lastDisplay.low,
+        close: lastDisplay.close,
+        time: lastDisplay.time,
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candleType]);
@@ -949,13 +954,17 @@ export function PriceChart({ symbol, timeframe }: Props) {
             value: last.close,
             pct: prev.close === 0 ? 0 : ((last.close - prev.close) / prev.close) * 100,
           });
-          setCurrentCandle({ open: last.open, high: last.high, low: last.low, close: last.close, time: last.time });
-          // Set price line color from the displayed candle (handles HA mode too)
           const lastDisplay = display.at(-1);
           if (lastDisplay && candleSeriesRef.current) {
+            setCurrentCandle({
+              open: lastDisplay.open,
+              high: lastDisplay.high,
+              low: lastDisplay.low,
+              close: lastDisplay.close,
+              time: lastDisplay.time,
+            });
             const col = lastDisplay.close >= lastDisplay.open ? TV_COLORS.green : TV_COLORS.red;
             candleSeriesRef.current.applyOptions({ priceLineColor: col });
-            lastDisplayCloseRef.current = lastDisplay.close;
           }
         }
 
@@ -1001,12 +1010,17 @@ export function PriceChart({ symbol, timeframe }: Props) {
               value: k.close,
               pct: prev && prev.close !== 0 ? ((k.close - prev.close) / prev.close) * 100 : 0,
             });
-            setCurrentCandle({ open: k.open, high: k.high, low: k.low, close: k.close, time: k.time });
+            setCurrentCandle({
+              open: lastDisplay.open,
+              high: lastDisplay.high,
+              low: lastDisplay.low,
+              close: lastDisplay.close,
+              time: lastDisplay.time,
+            });
             // Update price line color synchronously using the displayed candle direction
             candleSeriesRef.current.applyOptions({
               priceLineColor: lastDisplay.close >= lastDisplay.open ? TV_COLORS.green : TV_COLORS.red,
             });
-            lastDisplayCloseRef.current = lastDisplay.close;
           },
         });
       } catch (e) {
@@ -1089,8 +1103,8 @@ export function PriceChart({ symbol, timeframe }: Props) {
       {/* Price label + timer — single HTML flex column, always adjacent, no gap */}
       {(() => {
         void renderTick;
-        if (!currentCandle || !candleSeriesRef.current || lastDisplayCloseRef.current === null) return null;
-        const y = candleSeriesRef.current.priceToCoordinate(lastDisplayCloseRef.current);
+        if (!currentCandle || !candleSeriesRef.current) return null;
+        const y = candleSeriesRef.current.priceToCoordinate(currentCandle.close);
         if (y === null || !isFinite(y)) return null;
         const paneH = paneOffsets[0]?.height ?? 9999;
         const col = currentCandle.close >= currentCandle.open ? TV_COLORS.green : TV_COLORS.red;
@@ -1105,7 +1119,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
               className="flex h-5 items-center px-1.5 text-[11px] font-semibold text-white tabular-nums"
               style={{ backgroundColor: col }}
             >
-              {formatPrice(lastDisplayCloseRef.current)}
+              {formatPrice(currentCandle.close)}
             </span>
             <span
               className="flex h-5 items-center border-t border-white/30 px-1.5 font-mono text-[11px] font-semibold text-white"
@@ -1117,75 +1131,42 @@ export function PriceChart({ symbol, timeframe }: Props) {
         );
       })()}
 
-      {/* Right-axis live candle overlay: H, Price, Timer, L — collision-free */}
+      {/* Right-axis H / L labels (price + timer are rendered above) */}
       {(() => {
         void renderTick;
-        if (!currentCandle || !lastPrice || !candleSeriesRef.current) return null;
+        if (!currentCandle || !candleSeriesRef.current) return null;
         const series = candleSeriesRef.current;
         const yH = series.priceToCoordinate(currentCandle.high);
-        const yP = series.priceToCoordinate(lastPrice.value);
         const yL = series.priceToCoordinate(currentCandle.low);
-        if (yH === null || yP === null || yL === null) return null;
+        if (yH === null || yL === null) return null;
         const paneH = paneOffsets[0]?.height ?? 9999;
-        const isUp = currentCandle.close >= currentCandle.open;
-        const col = isUp ? TV_COLORS.green : TV_COLORS.red;
-
-        // Label heights and minimum gap
-        const LH = 20; // H, Timer, L
-        const PH = 22; // Price (slightly taller)
-        const GAP = 2;
-
-        // Ideal top positions (centered on their price y)
-        const tops = [
-          yH - LH / 2,          // H label
-          yP - PH / 2,           // Price label
-          yP + PH / 2 + GAP,     // Timer (just below price)
-          yL - LH / 2,           // L label
-        ];
-        const heights = [LH, PH, LH, LH];
-
-        // Forward pass: push each label down if it overlaps the one above
-        for (let i = 1; i < tops.length; i++) {
-          const minTop = tops[i - 1] + heights[i - 1] + GAP;
-          if (tops[i] < minTop) tops[i] = minTop;
-        }
-        // Backward pass: push each label up if it goes beyond pane bottom
-        for (let i = tops.length - 1; i >= 0; i--) {
-          const maxTop = paneH - heights[i];
-          if (tops[i] > maxTop) tops[i] = maxTop;
-          if (i > 0) {
-            const maxForPrev = tops[i] - heights[i - 1] - GAP;
-            if (tops[i - 1] > maxForPrev) tops[i - 1] = maxForPrev;
-          }
-        }
-        // Clamp all to valid range
-        for (let i = 0; i < tops.length; i++) {
-          tops[i] = Math.max(0, Math.min(tops[i], paneH - heights[i]));
-        }
-
+        const col = currentCandle.close >= currentCandle.open ? TV_COLORS.green : TV_COLORS.red;
+        const LH = 20;
         const items = [
-          { top: tops[0], h: LH, text: `H  ${formatPrice(currentCandle.high)}`, cls: "text-[11px] font-semibold" },
-          { top: tops[1], h: PH, text: formatPrice(lastPrice.value), cls: "text-sm font-bold" },
-          { top: tops[2], h: LH, text: formatElapsed(elapsed), cls: "font-mono text-[11px] font-semibold" },
-          { top: tops[3], h: LH, text: `L  ${formatPrice(currentCandle.low)}`, cls: "text-[11px] font-semibold" },
+          { y: yH, text: `H  ${formatPrice(currentCandle.high)}` },
+          { y: yL, text: `L  ${formatPrice(currentCandle.low)}` },
         ];
-
         return (
           <>
-            {items.map((item, i) => (
-              <div
-                key={i}
-                className="pointer-events-none absolute right-0 flex items-center"
-                style={{ top: Math.round(item.top), height: item.h }}
-              >
-                <span
-                  className={`px-1.5 text-white ${item.cls}`}
-                  style={{ backgroundColor: col }}
+            {items.map((item, i) => {
+              let top = Math.round(item.y - LH / 2);
+              if (top < 0) top = 0;
+              if (top + LH > paneH) top = paneH - LH;
+              return (
+                <div
+                  key={i}
+                  className="pointer-events-none absolute right-0 flex items-center"
+                  style={{ top, height: LH }}
                 >
-                  {item.text}
-                </span>
-              </div>
-            ))}
+                  <span
+                    className="px-1.5 text-[11px] font-semibold text-white"
+                    style={{ backgroundColor: col }}
+                  >
+                    {item.text}
+                  </span>
+                </div>
+              );
+            })}
           </>
         );
       })()}
