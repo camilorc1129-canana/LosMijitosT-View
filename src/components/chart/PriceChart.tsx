@@ -917,6 +917,9 @@ export function PriceChart({ symbol, timeframe }: Props) {
         candlesRef.current = [];
         if (candleSeriesRef.current) candleSeriesRef.current.setData([]);
         if (volumeSeriesRef.current) volumeSeriesRef.current.setData([]);
+        ema20Ref.current?.setData([]);
+        ema50Ref.current?.setData([]);
+        ema200Ref.current?.setData([]);
         candlesRef.current = klines;
         const display = toDisplay(klines);
         if (candleSeriesRef.current) {
@@ -945,8 +948,10 @@ export function PriceChart({ symbol, timeframe }: Props) {
         updateAO();
         updateEMA6x();
         updateSMA();
-        chartRef.current?.timeScale().fitContent();
-        requestAnimationFrame(() => recomputePaneOffsets());
+        requestAnimationFrame(() => {
+          chartRef.current?.timeScale().fitContent();
+          recomputePaneOffsets();
+        });
 
         if (klines.length > 0) {
           const last = klines[klines.length - 1];
