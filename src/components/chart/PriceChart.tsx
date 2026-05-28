@@ -911,19 +911,6 @@ export function PriceChart({ symbol, timeframe }: Props) {
       try {
         const klines = await fetchKlines(symbol, timeframe, 1000);
         if (cancelled) return;
-        // Reset series internal state before loading a new symbol.
-        // lightweight-charts v5 can leave the series in a bad state after
-        // live update() calls; setData([]) clears it cleanly.
-        candlesRef.current = [];
-        if (candleSeriesRef.current) candleSeriesRef.current.setData([]);
-        if (volumeSeriesRef.current) volumeSeriesRef.current.setData([]);
-        ema20Ref.current?.setData([]);
-        ema50Ref.current?.setData([]);
-        ema200Ref.current?.setData([]);
-        // Reset time scale to auto-fit mode (user pan/zoom locks the visible
-        // logical range; without this, new data falls outside and only the
-        // grid is visible).
-        chartRef.current?.timeScale().applyOptions({ rightOffset: 12, barSpacing: 8 });
         candlesRef.current = klines;
         const display = toDisplay(klines);
         if (candleSeriesRef.current) {
@@ -952,16 +939,8 @@ export function PriceChart({ symbol, timeframe }: Props) {
         updateAO();
         updateEMA6x();
         updateSMA();
-        // Double RAF: first frame commits the new data, second frame runs
-        // fitContent on the fully-committed time scale so it can't be
-        // ignored by the user-locked range from a previous pan/zoom.
-        requestAnimationFrame(() => {
-          chartRef.current?.timeScale().fitContent();
-          requestAnimationFrame(() => {
-            chartRef.current?.timeScale().fitContent();
-            recomputePaneOffsets();
-          });
-        });
+        chartRef.current?.timeScale().fitContent();
+        requestAnimationFrame(() => recomputePaneOffsets());
 
         if (klines.length > 0) {
           const last = klines[klines.length - 1];
@@ -986,8 +965,6 @@ export function PriceChart({ symbol, timeframe }: Props) {
           interval: timeframe,
           onCandle: (k) => {
             if (!candleSeriesRef.current) return;
-            // Discard messages that arrived after a symbol change
-            if (symbolRef.current !== symbol) return;
             const arr = candlesRef.current;
             const lastCandle = arr[arr.length - 1];
             if (lastCandle && lastCandle.time === k.time) {
