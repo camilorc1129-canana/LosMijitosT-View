@@ -167,6 +167,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
   const [renderTick, setRenderTick] = useState(0);
   const measureRef = useRef(measure);
   measureRef.current = measure;
+  const lastDisplayCloseRef = useRef<number | null>(null);
 
   // Tick every second to keep elapsed time current
   useEffect(() => {
@@ -895,6 +896,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
     if (lastDisplay) {
       const col = lastDisplay.close >= lastDisplay.open ? TV_COLORS.green : TV_COLORS.red;
       candleSeriesRef.current.applyOptions({ priceLineColor: col });
+      lastDisplayCloseRef.current = lastDisplay.close;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candleType]);
@@ -952,6 +954,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
           if (lastDisplay && candleSeriesRef.current) {
             const col = lastDisplay.close >= lastDisplay.open ? TV_COLORS.green : TV_COLORS.red;
             candleSeriesRef.current.applyOptions({ priceLineColor: col });
+            lastDisplayCloseRef.current = lastDisplay.close;
           }
         }
 
@@ -1002,6 +1005,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
             candleSeriesRef.current.applyOptions({
               priceLineColor: lastDisplay.close >= lastDisplay.open ? TV_COLORS.green : TV_COLORS.red,
             });
+            lastDisplayCloseRef.current = lastDisplay.close;
           },
         });
       } catch (e) {
@@ -1085,7 +1089,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
       {(() => {
         void renderTick;
         if (!currentCandle || !lastPrice || !candleSeriesRef.current) return null;
-        const y = candleSeriesRef.current.priceToCoordinate(lastPrice.value);
+        const y = candleSeriesRef.current.priceToCoordinate(lastDisplayCloseRef.current ?? lastPrice.value);
         if (y === null || !isFinite(y)) return null;
         const paneH = paneOffsets[0]?.height ?? 9999;
         // Native price label is ~20 px tall centered on y; bottom edge is at y+10
