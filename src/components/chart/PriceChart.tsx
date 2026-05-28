@@ -1108,7 +1108,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
               {formatPrice(lastDisplayCloseRef.current)}
             </span>
             <span
-              className="flex h-5 items-center px-1.5 font-mono text-[11px] font-semibold text-white"
+              className="flex h-5 items-center border-t border-white/30 px-1.5 font-mono text-[11px] font-semibold text-white"
               style={{ backgroundColor: col }}
             >
               {formatElapsed(elapsed)}
