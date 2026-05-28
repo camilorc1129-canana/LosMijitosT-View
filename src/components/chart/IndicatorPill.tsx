@@ -8,9 +8,9 @@ interface Props {
   value?: string;
   color: string;
   hidden: boolean;
-  onToggleHide: () => void;
-  onSettings: () => void;
-  onRemove: () => void;
+  onToggleHide?: () => void;
+  onSettings?: () => void;
+  onRemove?: () => void;
 }
 
 export function IndicatorPill({
@@ -37,36 +37,40 @@ export function IndicatorPill({
       {value !== undefined && (
         <span className="tabular-nums text-tv-text-muted">{value}</span>
       )}
-      <div className="ml-1 flex items-center gap-0.5">
-        <button
-          onClick={onToggleHide}
-          title={hidden ? "Mostrar" : "Ocultar"}
-          aria-label={hidden ? "Mostrar" : "Ocultar"}
-          className="rounded p-0.5 text-tv-text-dim transition-colors hover:bg-tv-panel-hover hover:text-tv-text"
-        >
-          {hidden ? (
-            <EyeOff className="h-3 w-3" />
-          ) : (
-            <Eye className="h-3 w-3" />
+      {(onToggleHide || onSettings || onRemove) && (
+        <div className="ml-1 flex items-center gap-0.5">
+          {onToggleHide && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleHide(); }}
+              title={hidden ? "Mostrar" : "Ocultar"}
+              aria-label={hidden ? "Mostrar" : "Ocultar"}
+              className="rounded p-0.5 text-tv-text-dim transition-colors hover:bg-tv-panel-hover hover:text-tv-text"
+            >
+              {hidden ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+            </button>
           )}
-        </button>
-        <button
-          onClick={onSettings}
-          title="Configurar"
-          aria-label="Configurar"
-          className="rounded p-0.5 text-tv-text-dim transition-colors hover:bg-tv-panel-hover hover:text-tv-text"
-        >
-          <Settings className="h-3 w-3" />
-        </button>
-        <button
-          onClick={onRemove}
-          title="Eliminar"
-          aria-label="Eliminar"
-          className="rounded p-0.5 text-tv-text-dim transition-colors hover:bg-tv-panel-hover hover:text-tv-red"
-        >
-          <X className="h-3 w-3" />
-        </button>
-      </div>
+          {onSettings && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onSettings(); }}
+              title="Configurar"
+              aria-label="Configurar"
+              className="rounded p-0.5 text-tv-text-dim transition-colors hover:bg-tv-panel-hover hover:text-tv-text"
+            >
+              <Settings className="h-3 w-3" />
+            </button>
+          )}
+          {onRemove && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onRemove(); }}
+              title="Eliminar"
+              aria-label="Eliminar"
+              className="rounded p-0.5 text-tv-text-dim transition-colors hover:bg-tv-panel-hover hover:text-tv-red"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
