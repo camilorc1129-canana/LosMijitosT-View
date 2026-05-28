@@ -1088,8 +1088,8 @@ export function PriceChart({ symbol, timeframe }: Props) {
         const y = candleSeriesRef.current.priceToCoordinate(lastPrice.value);
         if (y === null || !isFinite(y)) return null;
         const paneH = paneOffsets[0]?.height ?? 9999;
-        // Native price label is ~22 px tall and centered on y; timer starts right below it
-        const top = Math.round(y) + 12;
+        // Native price label is ~20 px tall centered on y; bottom edge is at y+10
+        const top = Math.round(y) + 10;
         if (top + 20 > paneH || y < -22) return null;
         const col = currentCandle.close >= currentCandle.open ? TV_COLORS.green : TV_COLORS.red;
         return (
