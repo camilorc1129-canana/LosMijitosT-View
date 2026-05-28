@@ -260,6 +260,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
       wickDownColor: TV_COLORS.red,
       priceLineColor: TV_COLORS.textMuted,
       priceLineStyle: 2,
+      lastValueVisible: false,
     });
 
     chartRef.current = chart;
@@ -1085,24 +1086,29 @@ export function PriceChart({ symbol, timeframe }: Props) {
       <div ref={containerRef} className="h-full w-full" />
       {measureRender}
 
-      {/* Independent candle timer — fixed just below the native price label */}
+      {/* Price label + timer — single HTML flex column, always adjacent, no gap */}
       {(() => {
         void renderTick;
-        if (!currentCandle || !lastPrice || !candleSeriesRef.current) return null;
-        const y = candleSeriesRef.current.priceToCoordinate(lastDisplayCloseRef.current ?? lastPrice.value);
+        if (!currentCandle || !candleSeriesRef.current || lastDisplayCloseRef.current === null) return null;
+        const y = candleSeriesRef.current.priceToCoordinate(lastDisplayCloseRef.current);
         if (y === null || !isFinite(y)) return null;
         const paneH = paneOffsets[0]?.height ?? 9999;
-        // Native price label is ~20 px tall centered on y; bottom edge is at y+10
-        const top = Math.round(y) + 10;
-        if (top + 20 > paneH || y < -22) return null;
         const col = currentCandle.close >= currentCandle.open ? TV_COLORS.green : TV_COLORS.red;
+        const top = Math.round(y) - 10;
+        if (top < -20 || top + 40 > paneH) return null;
         return (
           <div
-            className="pointer-events-none absolute right-0 z-10 flex items-center"
-            style={{ top, height: 20 }}
+            className="pointer-events-none absolute right-0 z-10 flex flex-col"
+            style={{ top }}
           >
             <span
-              className="px-1.5 font-mono text-[11px] font-semibold text-white"
+              className="flex h-5 items-center px-1.5 text-[11px] font-semibold text-white tabular-nums"
+              style={{ backgroundColor: col }}
+            >
+              {formatPrice(lastDisplayCloseRef.current)}
+            </span>
+            <span
+              className="flex h-5 items-center px-1.5 font-mono text-[11px] font-semibold text-white"
               style={{ backgroundColor: col }}
             >
               {formatElapsed(elapsed)}
