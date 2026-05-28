@@ -19,7 +19,7 @@ export default function HomePage() {
         <LeftSidebar />
         <main className="relative flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1">
-            <PriceChart symbol={symbol} timeframe={timeframe} />
+            <PriceChart key={`${symbol}-${timeframe}`} symbol={symbol} timeframe={timeframe} />
           </div>
         </main>
         <RightSidebar />
