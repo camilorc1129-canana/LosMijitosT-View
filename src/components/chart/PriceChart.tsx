@@ -911,6 +911,12 @@ export function PriceChart({ symbol, timeframe }: Props) {
       try {
         const klines = await fetchKlines(symbol, timeframe, 1000);
         if (cancelled) return;
+        // Reset series internal state before loading a new symbol.
+        // lightweight-charts v5 can leave the series in a bad state after
+        // live update() calls; setData([]) clears it cleanly.
+        candlesRef.current = [];
+        if (candleSeriesRef.current) candleSeriesRef.current.setData([]);
+        if (volumeSeriesRef.current) volumeSeriesRef.current.setData([]);
         candlesRef.current = klines;
         const display = toDisplay(klines);
         if (candleSeriesRef.current) {
@@ -965,6 +971,8 @@ export function PriceChart({ symbol, timeframe }: Props) {
           interval: timeframe,
           onCandle: (k) => {
             if (!candleSeriesRef.current) return;
+            // Discard messages that arrived after a symbol change
+            if (symbolRef.current !== symbol) return;
             const arr = candlesRef.current;
             const lastCandle = arr[arr.length - 1];
             if (lastCandle && lastCandle.time === k.time) {
