@@ -24,7 +24,9 @@ export function BottomPanel() {
         .catch(console.error);
     };
     load();
-    const id = setInterval(load, 5000);
+    // Providers with rate-limited free tiers (e.g. Twelve Data: 8 req/min)
+    // surface a higher cadence via pollingIntervalMs; default 5 s otherwise.
+    const id = setInterval(load, provider.pollingIntervalMs ?? 5000);
     return () => {
       cancelled = true;
       clearInterval(id);

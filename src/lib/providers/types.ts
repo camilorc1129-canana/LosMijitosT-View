@@ -36,6 +36,13 @@ export interface DataProvider {
   market: MarketKind;
   /** Default symbol when this provider is selected for the first time. */
   defaultSymbol: string;
+  /**
+   * Recommended cadence (ms) for REST polling of single-symbol quote
+   * endpoints (e.g. BottomPanel ticker). Providers with strict per-minute
+   * rate limits set higher values to stay inside the budget. Defaults to
+   * 5000 ms when omitted.
+   */
+  pollingIntervalMs?: number;
 
   // REST
   fetchKlines(symbol: string, interval: Timeframe, limit?: number): Promise<Candle[]>;

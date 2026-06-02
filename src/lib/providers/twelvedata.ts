@@ -143,6 +143,9 @@ export const twelvedataProvider: DataProvider = {
   name: "Twelve Data",
   market: "stocks",
   defaultSymbol: "AAPL",
+  // 8 req/min budget on free tier; 15 s keeps the BottomPanel + chart +
+  // watchlist combined under that ceiling.
+  pollingIntervalMs: 15_000,
 
   fetchKlines,
   fetchTicker24h,
