@@ -11,12 +11,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { fetchExchangeSymbols } from "@/lib/binance/rest";
+import { getProvider } from "@/lib/providers";
 import { useChartStore } from "@/lib/store/chart-store";
 import { cn } from "@/lib/utils";
 import type { SymbolInfo } from "@/lib/binance/types";
 
 export function SymbolSelector() {
+  const providerId = useChartStore((s) => s.providerId);
   const symbol = useChartStore((s) => s.symbol);
   const setSymbol = useChartStore((s) => s.setSymbol);
   const addToWatchlist = useChartStore((s) => s.addToWatchlist);
@@ -24,15 +25,24 @@ export function SymbolSelector() {
   const setOpen = useChartStore((s) => s.setSymbolDialogOpen);
 
   const [query, setQuery] = useState("");
-  const [allSymbols, setAllSymbols] = useState<SymbolInfo[]>([]);
+  // Cache tagged with the providerId it belongs to, so switching providers
+  // invalidates without a synchronous setState-in-effect.
+  const [cache, setCache] = useState<{ providerId: string; symbols: SymbolInfo[] }>({
+    providerId: "",
+    symbols: [],
+  });
 
   useEffect(() => {
-    if (open && allSymbols.length === 0) {
-      fetchExchangeSymbols().then(setAllSymbols).catch(console.error);
+    if (open && cache.providerId !== providerId) {
+      getProvider(providerId)
+        .fetchSymbols()
+        .then((symbols) => setCache({ providerId, symbols }))
+        .catch(console.error);
     }
-  }, [open, allSymbols.length]);
+  }, [open, providerId, cache.providerId]);
 
   const filtered = useMemo(() => {
+    const allSymbols = cache.providerId === providerId ? cache.symbols : [];
     const q = query.trim().toUpperCase();
     if (!q) return allSymbols.slice(0, 100);
     return allSymbols
@@ -43,7 +53,7 @@ export function SymbolSelector() {
           s.quoteAsset.includes(q),
       )
       .slice(0, 100);
-  }, [query, allSymbols]);
+  }, [query, cache, providerId]);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

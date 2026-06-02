@@ -12,10 +12,9 @@ import {
   type IPriceLine,
   type UTCTimestamp,
 } from "lightweight-charts";
-import { fetchKlines } from "@/lib/binance/rest";
-import { getBinanceWS } from "@/lib/binance/ws";
 import { sma, ema, rsi, macd, awesomeOscillator, heikinAshi } from "@/lib/indicators";
 import type { Candle, Timeframe } from "@/lib/binance/types";
+import { getProvider } from "@/lib/providers";
 import {
   INDICATOR_COLORS,
   EMA6X_COLOR,
@@ -138,6 +137,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
   const candlesRef = useRef<Candle[]>([]);
   const priceLinesMapRef = useRef<Map<string, IPriceLine>>(new Map());
 
+  const providerId = useChartStore((s) => s.providerId);
   const indicators = useChartStore((s) => s.indicators);
   const hidden = useChartStore((s) => s.hidden);
   const config = useChartStore((s) => s.config);
@@ -918,9 +918,11 @@ export function PriceChart({ symbol, timeframe }: Props) {
     let unsub: (() => void) | null = null;
     let cancelled = false;
 
+    const provider = getProvider(providerId);
+
     async function load() {
       try {
-        const klines = await fetchKlines(symbol, timeframe, 1000);
+        const klines = await provider.fetchKlines(symbol, timeframe, 1000);
         if (cancelled) return;
         candlesRef.current = klines;
         const display = toDisplay(klines);
@@ -974,8 +976,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
           }
         }
 
-        const ws = getBinanceWS();
-        unsub = ws.subscribeKline({
+        unsub = provider.subscribeKline({
           symbol,
           interval: timeframe,
           onCandle: (k) => {
@@ -1040,7 +1041,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
       cancelled = true;
       if (unsub) unsub();
     };
-  }, [symbol, timeframe]);
+  }, [symbol, timeframe, providerId]);
 
   const greenOrRed = (n: number) =>
     n >= 0 ? "text-tv-green" : "text-tv-red";

@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Timeframe } from "@/lib/binance/types";
+import { DEFAULT_PROVIDER_ID } from "@/lib/providers";
 
 export type IndicatorKey =
   | "ema20"
@@ -122,6 +123,8 @@ export const DEFAULT_WATCHLIST = [
 ];
 
 interface ChartState {
+  /** Active data provider id (e.g. "binance"). Resolves via getProvider(). */
+  providerId: string;
   symbol: string;
   timeframe: Timeframe;
   candleType: CandleType;
@@ -141,6 +144,7 @@ interface ChartState {
   settingsTarget: IndicatorKey | null;
 
   // Actions
+  setProviderId: (id: string) => void;
   setSymbol: (s: string) => void;
   setTimeframe: (t: Timeframe) => void;
   setCandleType: (t: CandleType) => void;
@@ -160,6 +164,7 @@ interface ChartState {
 export const useChartStore = create<ChartState>()(
   persist(
     (set) => ({
+      providerId: DEFAULT_PROVIDER_ID,
       symbol: "BTCUSDT",
       timeframe: "15m" as Timeframe,
       indicators: {
@@ -192,6 +197,7 @@ export const useChartStore = create<ChartState>()(
       symbolDialogOpen: false,
       settingsTarget: null,
 
+      setProviderId: (providerId) => set({ providerId }),
       setSymbol: (symbol) => set({ symbol }),
       setTimeframe: (timeframe) => set({ timeframe }),
       setCandleType: (candleType) => set({ candleType }),
@@ -248,7 +254,7 @@ export const useChartStore = create<ChartState>()(
     }),
     {
       name: "tv-gratis-chart-state",
-      version: 7,
+      version: 8,
       migrate: (persisted: unknown) => {
         const s = (persisted ?? {}) as Record<string, unknown>;
         // Drop delisted pairs (MATICUSDT was rebranded to POLUSDT in Sep 2024)
@@ -257,6 +263,9 @@ export const useChartStore = create<ChartState>()(
           : DEFAULT_WATCHLIST;
         return {
           ...s,
+          // Default the provider for users persisted before the multi-broker
+          // refactor; everyone existing was implicitly on Binance.
+          providerId: typeof s.providerId === "string" ? s.providerId : DEFAULT_PROVIDER_ID,
           // Reset symbol if it was a delisted pair
           symbol: s.symbol === "MATICUSDT" ? "BTCUSDT" : s.symbol,
           watchlist: cleanedWatchlist,
@@ -276,6 +285,7 @@ export const useChartStore = create<ChartState>()(
         };
       },
       partialize: (s) => ({
+        providerId: s.providerId,
         symbol: s.symbol,
         timeframe: s.timeframe,
         candleType: s.candleType,

@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Plus, X } from "lucide-react";
-import { fetchTickers24h } from "@/lib/binance/rest";
-import { getBinanceWS } from "@/lib/binance/ws";
+import { getProvider } from "@/lib/providers";
 import { useChartStore } from "@/lib/store/chart-store";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatPrice, formatPct } from "@/lib/format";
@@ -16,6 +15,7 @@ interface Row {
 }
 
 export function Watchlist() {
+  const providerId = useChartStore((s) => s.providerId);
   const watchlist = useChartStore((s) => s.watchlist);
   const symbol = useChartStore((s) => s.symbol);
   const setSymbol = useChartStore((s) => s.setSymbol);
@@ -27,8 +27,9 @@ export function Watchlist() {
   useEffect(() => {
     if (watchlist.length === 0) return;
     let cancelled = false;
+    const provider = getProvider(providerId);
 
-    fetchTickers24h(watchlist)
+    provider.fetchTickers24h(watchlist)
       .then((tickers) => {
         if (cancelled) return;
         const map: Record<string, Row> = {};
@@ -43,8 +44,7 @@ export function Watchlist() {
       })
       .catch(console.error);
 
-    const ws = getBinanceWS();
-    const unsub = ws.subscribeMiniTickers(watchlist, (tick) => {
+    const unsub = provider.subscribeMiniTickers(watchlist, (tick) => {
       setRows((prev) => {
         const prevRow = prev[tick.symbol];
         if (prevRow) {
@@ -79,7 +79,7 @@ export function Watchlist() {
       cancelled = true;
       unsub();
     };
-  }, [watchlist]);
+  }, [watchlist, providerId]);
 
   return (
     <div className="flex h-full flex-col">
