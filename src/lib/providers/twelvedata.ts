@@ -28,13 +28,18 @@ export const DEFAULT_TWELVEDATA_WATCHLIST: string[] = [
 ];
 
 /**
- * Polling cadence for the chart's "live" candle and watchlist tickers.
- * Twelve Data free tier allows 8 requests/minute per key. Two pollers at
- * 15 s each = 8 req/min total, exactly inside the limit. Stocks only
- * trade during market hours so faster polling buys little.
+ * Polling cadences tuned for Twelve Data's 8 req/min free tier budget,
+ * split across three concurrent pollers (chart, watchlist, bottom panel).
+ *
+ * - Chart at 20 s → 3 req/min (highest priority, user watches it directly).
+ * - Watchlist at 60 s → 1 req/min (one batch call covers all symbols).
+ * - BottomPanel at 30 s → 2 req/min (declared via pollingIntervalMs).
+ *
+ * Total ≈ 6 req/min, leaves 2 req/min of headroom for the initial load
+ * burst (fetchKlines + fetchSymbols + first quote) and momentary overlaps.
  */
-const KLINE_POLL_MS = 15_000;
-const TICKER_POLL_MS = 15_000;
+const KLINE_POLL_MS = 20_000;
+const TICKER_POLL_MS = 60_000;
 
 // ─── REST helpers (hit our own API routes; key stays server-side) ───
 
@@ -143,9 +148,9 @@ export const twelvedataProvider: DataProvider = {
   name: "Twelve Data",
   market: "stocks",
   defaultSymbol: "AAPL",
-  // 8 req/min budget on free tier; 15 s keeps the BottomPanel + chart +
-  // watchlist combined under that ceiling.
-  pollingIntervalMs: 15_000,
+  // 8 req/min budget on free tier; 30 s for the BottomPanel poller pairs
+  // with the chart (20 s) and watchlist (60 s) to stay near 6 req/min total.
+  pollingIntervalMs: 30_000,
 
   fetchKlines,
   fetchTicker24h,
