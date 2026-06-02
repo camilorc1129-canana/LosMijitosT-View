@@ -9,9 +9,9 @@ import type {
 } from "./types";
 
 /**
- * Default watchlist when the user first switches to Twelve Data. Mixes US
- * stocks, energy names and direct commodity feeds (BRENT, WTI) which the
- * Twelve Data free tier exposes natively — no ETF proxies needed.
+ * Default watchlist when the user first switches to Twelve Data. Free tier
+ * doesn't expose direct commodity feeds (BRENT/WTI require Pro), so oil
+ * exposure is taken via NYSE-listed ETFs which work fine on free.
  */
 export const DEFAULT_TWELVEDATA_WATCHLIST: string[] = [
   "PBR",   // Petrobras (NYSE ADR)
@@ -23,8 +23,8 @@ export const DEFAULT_TWELVEDATA_WATCHLIST: string[] = [
   "HAL",   // Halliburton
   "XOM",   // Exxon Mobil
   "SLB",   // Schlumberger
-  "BRENT", // Brent crude oil (direct)
-  "WTI",   // WTI crude oil (direct)
+  "BNO",   // Brent Oil ETF (proxy — direct BRENT requires Pro)
+  "USO",   // WTI Oil ETF  (proxy — direct WTI requires Pro)
 ];
 
 /**
