@@ -27,7 +27,7 @@ export const DEFAULT_TWELVEDATA_WATCHLIST: string[] = [
 ];
 
 /**
- * Polling cadences tuned for Twelve Data's 8 *credits*/min free tier.
+ * Polling cadences tuned for Twelve Data's 8 credits/min free tier.
  *
  * IMPORTANT: Twelve Data bills the quote-batch endpoint **per symbol**,
  * not per request. A watchlist of N symbols consumed every poll = N
