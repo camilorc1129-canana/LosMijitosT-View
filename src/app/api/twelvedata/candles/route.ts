@@ -48,6 +48,9 @@ export async function GET(request: NextRequest) {
 
   try {
     const upstream = await fetch(url, { cache: "no-store" });
+    if (upstream.status === 429) {
+      return Response.json({ error: "rate_limited" }, { status: 429 });
+    }
     if (!upstream.ok) {
       const body = await upstream.text();
       return Response.json(
@@ -56,6 +59,11 @@ export async function GET(request: NextRequest) {
       );
     }
     const data = (await upstream.json()) as TwelveDataResponse;
+    // Twelve Data also surfaces rate-limit errors with HTTP 200 + code 429
+    // in the body. Forward as 429 so the client can back off.
+    if (data.code === 429) {
+      return Response.json({ error: "rate_limited" }, { status: 429 });
+    }
     if (data.status === "error" || !data.values) {
       return Response.json(
         { error: `twelvedata: ${data.message ?? "no data"}` },

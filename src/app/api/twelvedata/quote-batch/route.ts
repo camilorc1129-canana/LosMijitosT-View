@@ -13,6 +13,7 @@ interface TwelveDataQuote {
   change?: string;
   percent_change?: string;
   status?: "error";
+  code?: number;
   message?: string;
 }
 
@@ -53,10 +54,17 @@ export async function GET(request: NextRequest) {
   const url = `${TWELVEDATA_BASE}/quote?symbol=${encodeURIComponent(symbols.join(","))}&apikey=${apiKey}`;
   try {
     const upstream = await fetch(url, { cache: "no-store" });
+    if (upstream.status === 429) {
+      return Response.json({ error: "rate_limited" }, { status: 429 });
+    }
     if (!upstream.ok) {
       return Response.json({ error: `twelvedata ${upstream.status}` }, { status: 502 });
     }
     const data = (await upstream.json()) as TwelveDataQuote | Record<string, TwelveDataQuote>;
+    // 200 + code:429 in the body when free-tier credits are exhausted.
+    if ((data as TwelveDataQuote).code === 429) {
+      return Response.json({ error: "rate_limited" }, { status: 429 });
+    }
 
     // Single-symbol responses come as a flat object; multi-symbol responses
     // come keyed by symbol. Normalise to an array.

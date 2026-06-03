@@ -18,6 +18,7 @@ interface TwelveDataQuote {
   change?: string;
   percent_change?: string;
   status?: "error";
+  code?: number;
   message?: string;
 }
 
@@ -50,10 +51,16 @@ export async function GET(request: NextRequest) {
   const url = `${TWELVEDATA_BASE}/quote?symbol=${encodeURIComponent(symbol)}&apikey=${apiKey}`;
   try {
     const upstream = await fetch(url, { cache: "no-store" });
+    if (upstream.status === 429) {
+      return Response.json({ error: "rate_limited" }, { status: 429 });
+    }
     if (!upstream.ok) {
       return Response.json({ error: `twelvedata ${upstream.status}` }, { status: 502 });
     }
     const q = (await upstream.json()) as TwelveDataQuote;
+    if (q.code === 429) {
+      return Response.json({ error: "rate_limited" }, { status: 429 });
+    }
     const ticker = toTicker(q, symbol);
     if (!ticker) {
       return Response.json(

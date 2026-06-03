@@ -41,6 +41,41 @@ export const DEFAULT_TWELVEDATA_WATCHLIST: string[] = [
 const KLINE_POLL_MS = 20_000;
 const TICKER_POLL_MS = 60_000;
 
+// ─── Client-side rate-limit back-off ───
+//
+// When any API route forwards a 429 from upstream, all subsequent calls
+// short-circuit for RATE_LIMIT_COOLDOWN_MS so we don't keep hammering
+// Twelve Data while their bucket refills. Without this guard, navigating
+// rapidly between symbols easily burns through the 8 req/min free-tier
+// budget and every poller fails for the rest of the minute.
+
+const RATE_LIMIT_COOLDOWN_MS = 60_000;
+let rateLimitedUntil = 0;
+
+function isRateLimited(): boolean {
+  return Date.now() < rateLimitedUntil;
+}
+
+function markRateLimited() {
+  rateLimitedUntil = Date.now() + RATE_LIMIT_COOLDOWN_MS;
+  console.warn(
+    "[twelvedata] rate-limit hit; pausing requests until",
+    new Date(rateLimitedUntil).toLocaleTimeString(),
+  );
+}
+
+async function rateAwareFetch(url: string, init?: RequestInit): Promise<Response> {
+  if (isRateLimited()) {
+    throw new Error("twelvedata: rate-limit cooldown active");
+  }
+  const res = await fetch(url, init);
+  if (res.status === 429) {
+    markRateLimited();
+    throw new Error("twelvedata: rate-limit cooldown engaged");
+  }
+  return res;
+}
+
 // ─── REST helpers (hit our own API routes; key stays server-side) ───
 
 async function fetchKlines(
@@ -49,7 +84,7 @@ async function fetchKlines(
   limit = 1000,
 ): Promise<Candle[]> {
   const url = `/api/twelvedata/candles?symbol=${encodeURIComponent(symbol)}&tf=${interval}&limit=${limit}`;
-  const res = await fetch(url, { cache: "no-store" });
+  const res = await rateAwareFetch(url, { cache: "no-store" });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     throw new Error(`twelvedata candles ${res.status} ${body}`);
@@ -59,7 +94,7 @@ async function fetchKlines(
 
 async function fetchTicker24h(symbol: string): Promise<Ticker24h> {
   const url = `/api/twelvedata/quote?symbol=${encodeURIComponent(symbol)}`;
-  const res = await fetch(url, { cache: "no-store" });
+  const res = await rateAwareFetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error(`twelvedata quote ${res.status}`);
   return res.json() as Promise<Ticker24h>;
 }
@@ -67,13 +102,13 @@ async function fetchTicker24h(symbol: string): Promise<Ticker24h> {
 async function fetchTickers24h(symbols: string[]): Promise<Ticker24h[]> {
   if (symbols.length === 0) return [];
   const url = `/api/twelvedata/quote-batch?symbols=${encodeURIComponent(symbols.join(","))}`;
-  const res = await fetch(url, { cache: "no-store" });
+  const res = await rateAwareFetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error(`twelvedata quote-batch ${res.status}`);
   return res.json() as Promise<Ticker24h[]>;
 }
 
 async function fetchSymbols(): Promise<SymbolInfo[]> {
-  const res = await fetch("/api/twelvedata/symbols", { cache: "force-cache" });
+  const res = await rateAwareFetch("/api/twelvedata/symbols", { cache: "force-cache" });
   if (!res.ok) throw new Error(`twelvedata symbols ${res.status}`);
   return res.json() as Promise<SymbolInfo[]>;
 }
