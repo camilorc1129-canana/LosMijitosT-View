@@ -28,29 +28,42 @@ export const DEFAULT_TWELVEDATA_WATCHLIST: string[] = [
 ];
 
 /**
- * Polling cadences tuned for Twelve Data's 8 req/min free tier budget,
- * split across three concurrent pollers (chart, watchlist, bottom panel).
+ * Polling cadences tuned for Twelve Data's 8 req/min free tier budget.
+ * The danger zone is the FIRST minute after mount: every poller fires
+ * once immediately and again at its interval, so a 60 s window starting
+ * at t=0 includes (initial + interval-fires-inside-60s) for each poller.
  *
- * - Chart at 20 s → 3 req/min (highest priority, user watches it directly).
- * - Watchlist at 60 s → 1 req/min (one batch call covers all symbols).
- * - BottomPanel at 30 s → 2 req/min (declared via pollingIntervalMs).
+ * - Chart at 25 s → 3 calls in t∈[0,60s] (t=0, 25, 50)
+ * - BottomPanel at 60 s → 2 calls (t=0, 60), via pollingIntervalMs
+ * - Watchlist at 60 s → 2 calls (t=0, 60)
  *
- * Total ≈ 6 req/min, leaves 2 req/min of headroom for the initial load
- * burst (fetchKlines + fetchSymbols + first quote) and momentary overlaps.
+ * First-minute total: 7 calls ≤ 8 budget (headroom for fetchSymbols too).
+ * Steady-state total: 5 calls/min.
  */
-const KLINE_POLL_MS = 20_000;
+const KLINE_POLL_MS = 25_000;
 const TICKER_POLL_MS = 60_000;
 
-// ─── Client-side rate-limit back-off ───
+// ─── Client-side rate-limit back-off (persisted across reloads) ───
 //
 // When any API route forwards a 429 from upstream, all subsequent calls
 // short-circuit for RATE_LIMIT_COOLDOWN_MS so we don't keep hammering
-// Twelve Data while their bucket refills. Without this guard, navigating
-// rapidly between symbols easily burns through the 8 req/min free-tier
-// budget and every poller fails for the rest of the minute.
+// Twelve Data while their bucket refills. The deadline is persisted in
+// localStorage so a page refresh during the cooldown doesn't reset
+// it — otherwise the post-refresh load burst would re-trip the limit
+// immediately.
 
 const RATE_LIMIT_COOLDOWN_MS = 60_000;
-let rateLimitedUntil = 0;
+const RATE_LIMIT_KEY = "td-rate-limit-until";
+
+function readPersistedDeadline(): number {
+  if (typeof window === "undefined") return 0;
+  const raw = window.localStorage.getItem(RATE_LIMIT_KEY);
+  if (!raw) return 0;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) ? n : 0;
+}
+
+let rateLimitedUntil = readPersistedDeadline();
 
 function isRateLimited(): boolean {
   return Date.now() < rateLimitedUntil;
@@ -58,6 +71,9 @@ function isRateLimited(): boolean {
 
 function markRateLimited() {
   rateLimitedUntil = Date.now() + RATE_LIMIT_COOLDOWN_MS;
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(RATE_LIMIT_KEY, String(rateLimitedUntil));
+  }
   console.warn(
     "[twelvedata] rate-limit hit; pausing requests until",
     new Date(rateLimitedUntil).toLocaleTimeString(),
@@ -183,9 +199,9 @@ export const twelvedataProvider: DataProvider = {
   name: "Twelve Data",
   market: "stocks",
   defaultSymbol: "AAPL",
-  // 8 req/min budget on free tier; 30 s for the BottomPanel poller pairs
-  // with the chart (20 s) and watchlist (60 s) to stay near 6 req/min total.
-  pollingIntervalMs: 30_000,
+  // 8 req/min budget; 60 s for the BottomPanel pairs with chart 25 s and
+  // watchlist 60 s so the first-minute burst tops out at 7 calls.
+  pollingIntervalMs: 60_000,
 
   fetchKlines,
   fetchTicker24h,
