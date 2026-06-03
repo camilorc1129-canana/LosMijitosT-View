@@ -9,39 +9,45 @@ import type {
 } from "./types";
 
 /**
- * Default watchlist when the user first switches to Twelve Data. Free tier
- * doesn't expose direct commodity feeds (BRENT/WTI require Pro), so oil
- * exposure is taken via NYSE-listed ETFs which work fine on free.
+ * Default watchlist when the user first switches to Twelve Data. Kept
+ * intentionally short because Twelve Data bills /quote-batch per symbol
+ * — every entry here is a credit per watchlist poll. Free tier sustains
+ * roughly a 5-6 symbol watchlist comfortably; add more only if you
+ * upgrade or accept slower watchlist refresh rates.
+ *
+ * Oil exposure via BNO (Brent ETF) and USO (WTI ETF) because direct
+ * BRENT/WTI feeds require Twelve Data Pro.
  */
 export const DEFAULT_TWELVEDATA_WATCHLIST: string[] = [
   "PBR",   // Petrobras (NYSE ADR)
   "AAPL",  // Apple
-  "TSLA",  // Tesla
-  "MSFT",  // Microsoft
-  "GOOGL", // Alphabet
-  "NVDA",  // Nvidia
-  "HAL",   // Halliburton
   "XOM",   // Exxon Mobil
-  "SLB",   // Schlumberger
-  "BNO",   // Brent Oil ETF (proxy — direct BRENT requires Pro)
-  "USO",   // WTI Oil ETF  (proxy — direct WTI requires Pro)
+  "HAL",   // Halliburton
+  "BNO",   // Brent Oil ETF (proxy)
 ];
 
 /**
- * Polling cadences tuned for Twelve Data's 8 req/min free tier budget.
- * The danger zone is the FIRST minute after mount: every poller fires
- * once immediately and again at its interval, so a 60 s window starting
- * at t=0 includes (initial + interval-fires-inside-60s) for each poller.
+ * Polling cadences tuned for Twelve Data's 8 *credits*/min free tier.
  *
- * - Chart at 25 s → 3 calls in t∈[0,60s] (t=0, 25, 50)
- * - BottomPanel at 60 s → 2 calls (t=0, 60), via pollingIntervalMs
- * - Watchlist at 60 s → 2 calls (t=0, 60)
+ * IMPORTANT: Twelve Data bills the quote-batch endpoint **per symbol**,
+ * not per request. A watchlist of N symbols consumed every poll = N
+ * credits. With N=10 and polling every 60 s the watchlist alone burns
+ * 10 credits/min, exceeding the budget before the chart even loads.
  *
- * First-minute total: 7 calls ≤ 8 budget (headroom for fetchSymbols too).
- * Steady-state total: 5 calls/min.
+ * Compromise: poll the watchlist every 5 minutes (12 credits/5min =
+ * 2.4/min averaged for a 10-symbol list). The chart and BottomPanel
+ * use single-symbol endpoints which cost 1 credit each.
+ *
+ * - Chart at 25 s → 3 credits/min
+ * - BottomPanel at 60 s → 1 credit/min (via pollingIntervalMs)
+ * - Watchlist at 300 s → ~2 credits/min averaged for 10 symbols
+ *
+ * Steady-state ≈ 6 credits/min on a 10-symbol watchlist. Symbol changes
+ * cost an extra 2 credits each (1 chart + 1 quote), so a few clicks/min
+ * still fit before the back-off cooldown kicks in.
  */
 const KLINE_POLL_MS = 25_000;
-const TICKER_POLL_MS = 60_000;
+const TICKER_POLL_MS = 300_000;
 
 // ─── Client-side rate-limit back-off (persisted across reloads) ───
 //
