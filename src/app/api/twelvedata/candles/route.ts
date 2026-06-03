@@ -86,7 +86,9 @@ export async function GET(request: NextRequest) {
     }));
 
     return Response.json(candles, {
-      headers: { "Cache-Control": "s-maxage=10, stale-while-revalidate=60" },
+      // Aggressive edge cache so re-visiting a symbol within a minute
+      // serves from Vercel's CDN — zero Twelve Data calls for that case.
+      headers: { "Cache-Control": "s-maxage=60, stale-while-revalidate=120" },
     });
   } catch (e) {
     return Response.json({ error: String(e) }, { status: 502 });

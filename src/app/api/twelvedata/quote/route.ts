@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
       );
     }
     return Response.json(ticker, {
-      headers: { "Cache-Control": "s-maxage=5, stale-while-revalidate=15" },
+      headers: { "Cache-Control": "s-maxage=30, stale-while-revalidate=60" },
     });
   } catch (e) {
     return Response.json({ error: String(e) }, { status: 502 });
