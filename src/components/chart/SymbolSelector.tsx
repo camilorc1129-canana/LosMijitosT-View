@@ -11,38 +11,48 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { getProvider } from "@/lib/providers";
+import { getProvider, listProviders } from "@/lib/providers";
 import { useChartStore } from "@/lib/store/chart-store";
 import { cn } from "@/lib/utils";
 import type { SymbolInfo } from "@/lib/binance/types";
 
 export function SymbolSelector() {
-  const providerId = useChartStore((s) => s.providerId);
+  const activeProviderId = useChartStore((s) => s.providerId);
   const symbol = useChartStore((s) => s.symbol);
   const setSymbol = useChartStore((s) => s.setSymbol);
+  const setProviderId = useChartStore((s) => s.setProviderId);
   const addToWatchlist = useChartStore((s) => s.addToWatchlist);
   const open = useChartStore((s) => s.symbolDialogOpen);
   const setOpen = useChartStore((s) => s.setSymbolDialogOpen);
 
+  // Tab selected inside the dialog — independent of the active chart provider
+  // so the user can browse Twelve Data symbols without switching the chart
+  // until they actually pick one.
+  const [tabProviderId, setTabProviderId] = useState<string>(activeProviderId);
+  // Reset the tab to the active provider every time the dialog opens.
+  useEffect(() => {
+    if (open) setTabProviderId(activeProviderId);
+  }, [open, activeProviderId]);
+
+  const providers = useMemo(() => listProviders(), []);
+
   const [query, setQuery] = useState("");
-  // Cache tagged with the providerId it belongs to, so switching providers
-  // invalidates without a synchronous setState-in-effect.
-  const [cache, setCache] = useState<{ providerId: string; symbols: SymbolInfo[] }>({
-    providerId: "",
-    symbols: [],
-  });
+  // Cache symbol lists per provider so switching tabs doesn't re-fetch.
+  const [cache, setCache] = useState<Record<string, SymbolInfo[]>>({});
 
   useEffect(() => {
-    if (open && cache.providerId !== providerId) {
-      getProvider(providerId)
-        .fetchSymbols()
-        .then((symbols) => setCache({ providerId, symbols }))
-        .catch(console.error);
-    }
-  }, [open, providerId, cache.providerId]);
+    if (!open) return;
+    if (cache[tabProviderId]) return;
+    getProvider(tabProviderId)
+      .fetchSymbols()
+      .then((symbols) =>
+        setCache((prev) => ({ ...prev, [tabProviderId]: symbols })),
+      )
+      .catch(console.error);
+  }, [open, tabProviderId, cache]);
 
   const filtered = useMemo(() => {
-    const allSymbols = cache.providerId === providerId ? cache.symbols : [];
+    const allSymbols = cache[tabProviderId] ?? [];
     const q = query.trim().toUpperCase();
     if (!q) return allSymbols.slice(0, 100);
     return allSymbols
@@ -53,7 +63,17 @@ export function SymbolSelector() {
           s.quoteAsset.includes(q),
       )
       .slice(0, 100);
-  }, [query, cache, providerId]);
+  }, [query, cache, tabProviderId]);
+
+  const handlePick = (s: SymbolInfo) => {
+    // Switching providers + symbol together so the chart's remount key flips
+    // atomically (see page.tsx <PriceChart key=...>).
+    if (tabProviderId !== activeProviderId) setProviderId(tabProviderId);
+    setSymbol(s.symbol);
+    addToWatchlist({ symbol: s.symbol, providerId: tabProviderId });
+    setOpen(false);
+    setQuery("");
+  };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -66,10 +86,27 @@ export function SymbolSelector() {
         <DialogHeader className="border-b border-tv-border px-4 py-3">
           <DialogTitle className="text-sm font-medium">Buscar símbolo</DialogTitle>
         </DialogHeader>
+        {/* Provider tabs — pick which broker's symbol universe to search. */}
+        <div className="flex gap-1 border-b border-tv-border px-3 pt-2">
+          {providers.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => setTabProviderId(p.id)}
+              className={cn(
+                "rounded-t px-3 py-1.5 text-xs font-medium transition-colors",
+                tabProviderId === p.id
+                  ? "bg-tv-bg text-tv-text"
+                  : "text-tv-text-muted hover:text-tv-text",
+              )}
+            >
+              {p.name}
+            </button>
+          ))}
+        </div>
         <div className="border-b border-tv-border p-3">
           <Input
             autoFocus
-            placeholder="BTC, ETH, SOL…"
+            placeholder={tabProviderId === "binance" ? "BTC, ETH, SOL…" : "AAPL, PBR, XOM…"}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="bg-tv-bg"
@@ -79,21 +116,16 @@ export function SymbolSelector() {
           <div className="flex flex-col">
             {filtered.length === 0 && (
               <div className="p-4 text-center text-xs text-tv-text-muted">
-                Sin resultados
+                {cache[tabProviderId] ? "Sin resultados" : "Cargando símbolos…"}
               </div>
             )}
             {filtered.map((s) => (
               <button
-                key={s.symbol}
-                onClick={() => {
-                  setSymbol(s.symbol);
-                  addToWatchlist(s.symbol);
-                  setOpen(false);
-                  setQuery("");
-                }}
+                key={`${tabProviderId}|${s.symbol}`}
+                onClick={() => handlePick(s)}
                 className={cn(
                   "flex items-center justify-between border-b border-tv-border px-4 py-2 text-left text-xs hover:bg-tv-panel-hover",
-                  s.symbol === symbol && "bg-tv-panel-hover",
+                  s.symbol === symbol && tabProviderId === activeProviderId && "bg-tv-panel-hover",
                 )}
               >
                 <div className="flex items-center gap-3">

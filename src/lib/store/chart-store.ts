@@ -25,6 +25,17 @@ export interface PriceLine {
   price: number;
 }
 
+/**
+ * A watchlist entry remembers which provider its symbol belongs to so a
+ * mixed watchlist (e.g. BTCUSDT from Binance + AAPL from Twelve Data)
+ * polls each source through the correct adapter and clicking it switches
+ * the chart to that provider automatically.
+ */
+export interface WatchlistEntry {
+  symbol: string;
+  providerId: string;
+}
+
 export interface IndicatorConfig {
   ema20: number;
   ema50: number;
@@ -109,7 +120,8 @@ export const INDICATOR_COLORS: Record<IndicatorKey, string> = {
   sma: "#26a69a",
 };
 
-export const DEFAULT_WATCHLIST = [
+/** Raw symbol strings for the Binance default watchlist (legacy shape). */
+const DEFAULT_WATCHLIST_BINANCE = [
   "BTCUSDT",
   "ETHUSDT",
   "SOLUSDT",
@@ -121,6 +133,11 @@ export const DEFAULT_WATCHLIST = [
   "LINKUSDT",
   "POLUSDT",
 ];
+
+/** New default — each entry tagged with the provider it belongs to. */
+export const DEFAULT_WATCHLIST: WatchlistEntry[] = DEFAULT_WATCHLIST_BINANCE.map(
+  (symbol) => ({ symbol, providerId: "binance" }),
+);
 
 interface ChartState {
   /** Active data provider id (e.g. "binance"). Resolves via getProvider(). */
@@ -134,7 +151,7 @@ interface ChartState {
   hidden: Record<IndicatorKey, boolean>;
   /** Periods and parameters for each indicator */
   config: IndicatorConfig;
-  watchlist: string[];
+  watchlist: WatchlistEntry[];
 
   // Ephemeral UI state (not persisted)
   tool: DrawingTool;
@@ -152,8 +169,8 @@ interface ChartState {
   removeIndicator: (key: IndicatorKey) => void;
   toggleHidden: (key: IndicatorKey) => void;
   setConfig: (patch: Partial<IndicatorConfig>) => void;
-  addToWatchlist: (s: string) => void;
-  removeFromWatchlist: (s: string) => void;
+  addToWatchlist: (entry: WatchlistEntry) => void;
+  removeFromWatchlist: (entry: WatchlistEntry) => void;
   setTool: (t: DrawingTool) => void;
   addPriceLine: (price: number, symbol: string) => void;
   clearPriceLines: (symbol?: string) => void;
@@ -218,15 +235,19 @@ export const useChartStore = create<ChartState>()(
         set((s) => ({ hidden: { ...s.hidden, [key]: !s.hidden[key] } })),
       setConfig: (patch) =>
         set((s) => ({ config: { ...s.config, ...patch } })),
-      addToWatchlist: (s) =>
+      addToWatchlist: (entry) =>
         set((state) => ({
-          watchlist: state.watchlist.includes(s)
+          watchlist: state.watchlist.some(
+            (x) => x.symbol === entry.symbol && x.providerId === entry.providerId,
+          )
             ? state.watchlist
-            : [...state.watchlist, s],
+            : [...state.watchlist, entry],
         })),
-      removeFromWatchlist: (s) =>
+      removeFromWatchlist: (entry) =>
         set((state) => ({
-          watchlist: state.watchlist.filter((x) => x !== s),
+          watchlist: state.watchlist.filter(
+            (x) => !(x.symbol === entry.symbol && x.providerId === entry.providerId),
+          ),
         })),
       setTool: (tool) => set({ tool }),
       addPriceLine: (price, symbol) =>
@@ -254,13 +275,28 @@ export const useChartStore = create<ChartState>()(
     }),
     {
       name: "tv-gratis-chart-state",
-      version: 8,
+      version: 9,
       migrate: (persisted: unknown) => {
         const s = (persisted ?? {}) as Record<string, unknown>;
-        // Drop delisted pairs (MATICUSDT was rebranded to POLUSDT in Sep 2024)
-        const cleanedWatchlist = Array.isArray(s.watchlist)
-          ? (s.watchlist as string[]).filter((sym) => sym !== "MATICUSDT")
-          : DEFAULT_WATCHLIST;
+        // v8 → v9: watchlist string[] becomes WatchlistEntry[]. Plain strings
+        // from before the multi-broker refactor were implicitly Binance.
+        const rawList: unknown[] = Array.isArray(s.watchlist) ? s.watchlist : [];
+        const cleanedWatchlist: WatchlistEntry[] = rawList
+          .map((item): WatchlistEntry | null => {
+            if (typeof item === "string") {
+              if (item === "MATICUSDT") return null; // delisted Sep 2024
+              return { symbol: item, providerId: "binance" };
+            }
+            if (item && typeof item === "object") {
+              const e = item as Record<string, unknown>;
+              const symbol = typeof e.symbol === "string" ? e.symbol : null;
+              if (!symbol) return null;
+              const providerId = typeof e.providerId === "string" ? e.providerId : "binance";
+              return { symbol, providerId };
+            }
+            return null;
+          })
+          .filter((e): e is WatchlistEntry => e !== null);
         return {
           ...s,
           // Default the provider for users persisted before the multi-broker
@@ -268,7 +304,7 @@ export const useChartStore = create<ChartState>()(
           providerId: typeof s.providerId === "string" ? s.providerId : DEFAULT_PROVIDER_ID,
           // Reset symbol if it was a delisted pair
           symbol: s.symbol === "MATICUSDT" ? "BTCUSDT" : s.symbol,
-          watchlist: cleanedWatchlist,
+          watchlist: cleanedWatchlist.length > 0 ? cleanedWatchlist : DEFAULT_WATCHLIST,
           // Merge config with defaults so new fields always exist
           config: { ...DEFAULT_CONFIG, ...(s.config as object | undefined) },
           // Merge indicators/hidden so new keys always exist
