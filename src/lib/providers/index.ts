@@ -1,5 +1,4 @@
 import { binanceProvider } from "./binance";
-import { finnhubProvider } from "./finnhub";
 import { twelvedataProvider } from "./twelvedata";
 import type { DataProvider } from "./types";
 
@@ -7,7 +6,6 @@ export const DEFAULT_PROVIDER_ID = "binance";
 
 const REGISTRY: Record<string, DataProvider> = {
   [binanceProvider.id]: binanceProvider,
-  [finnhubProvider.id]: finnhubProvider,
   [twelvedataProvider.id]: twelvedataProvider,
 };
 

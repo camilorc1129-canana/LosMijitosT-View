@@ -121,18 +121,7 @@ export const INDICATOR_COLORS: Record<IndicatorKey, string> = {
 };
 
 /** Raw symbol strings for the Binance default watchlist (legacy shape). */
-const DEFAULT_WATCHLIST_BINANCE = [
-  "BTCUSDT",
-  "ETHUSDT",
-  "SOLUSDT",
-  "BNBUSDT",
-  "XRPUSDT",
-  "DOGEUSDT",
-  "ADAUSDT",
-  "AVAXUSDT",
-  "LINKUSDT",
-  "POLUSDT",
-];
+const DEFAULT_WATCHLIST_BINANCE = ["BTCUSDT", "ETHUSDT", "XRPUSDT", "SOLUSDT"];
 
 /** New default — each entry tagged with the provider it belongs to. */
 export const DEFAULT_WATCHLIST: WatchlistEntry[] = DEFAULT_WATCHLIST_BINANCE.map(
@@ -275,11 +264,13 @@ export const useChartStore = create<ChartState>()(
     }),
     {
       name: "tv-gratis-chart-state",
-      version: 9,
+      version: 10,
       migrate: (persisted: unknown) => {
         const s = (persisted ?? {}) as Record<string, unknown>;
         // v8 → v9: watchlist string[] becomes WatchlistEntry[]. Plain strings
         // from before the multi-broker refactor were implicitly Binance.
+        // v9 → v10: Finnhub provider was removed — drop any entries pointing
+        // to it and reset the active provider to Binance if it was Finnhub.
         const rawList: unknown[] = Array.isArray(s.watchlist) ? s.watchlist : [];
         const cleanedWatchlist: WatchlistEntry[] = rawList
           .map((item): WatchlistEntry | null => {
@@ -292,16 +283,17 @@ export const useChartStore = create<ChartState>()(
               const symbol = typeof e.symbol === "string" ? e.symbol : null;
               if (!symbol) return null;
               const providerId = typeof e.providerId === "string" ? e.providerId : "binance";
+              if (providerId === "finnhub") return null; // provider removed
               return { symbol, providerId };
             }
             return null;
           })
           .filter((e): e is WatchlistEntry => e !== null);
+        const persistedProviderId = typeof s.providerId === "string" ? s.providerId : DEFAULT_PROVIDER_ID;
         return {
           ...s,
-          // Default the provider for users persisted before the multi-broker
-          // refactor; everyone existing was implicitly on Binance.
-          providerId: typeof s.providerId === "string" ? s.providerId : DEFAULT_PROVIDER_ID,
+          // Reset to Binance if the user had Finnhub selected.
+          providerId: persistedProviderId === "finnhub" ? DEFAULT_PROVIDER_ID : persistedProviderId,
           // Reset symbol if it was a delisted pair
           symbol: s.symbol === "MATICUSDT" ? "BTCUSDT" : s.symbol,
           watchlist: cleanedWatchlist.length > 0 ? cleanedWatchlist : DEFAULT_WATCHLIST,
