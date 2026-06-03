@@ -41,4 +41,8 @@ export interface SymbolInfo {
   baseAsset: string;
   quoteAsset: string;
   status: string;
+  /** Human-readable name (e.g. "NVIDIA Corp"). Stocks providers set it;
+   *  Binance leaves it undefined since the base asset already conveys
+   *  the same info. Used by the symbol search to match company names. */
+  name?: string;
 }

@@ -53,6 +53,7 @@ export async function GET() {
       baseAsset: s.symbol,
       quoteAsset: s.currency ?? "USD",
       status: "TRADING",
+      name: s.name,
     }));
 
     const commoditySymbols: SymbolInfo[] = (commoditiesData.data ?? []).map((c) => ({
@@ -60,6 +61,7 @@ export async function GET() {
       baseAsset: c.symbol,
       quoteAsset: "USD",
       status: "TRADING",
+      name: c.name,
     }));
 
     const merged = [...stockSymbols, ...commoditySymbols];

@@ -56,12 +56,15 @@ export function SymbolSelector() {
     const q = query.trim().toUpperCase();
     if (!q) return allSymbols.slice(0, 100);
     return allSymbols
-      .filter(
-        (s) =>
-          s.symbol.includes(q) ||
-          s.baseAsset.includes(q) ||
-          s.quoteAsset.includes(q),
-      )
+      .filter((s) => {
+        if (s.symbol.includes(q)) return true;
+        if (s.baseAsset.includes(q)) return true;
+        if (s.quoteAsset.includes(q)) return true;
+        // Match against the company name too so users can search "NVIDIA"
+        // and get NVDA. Names from upstream may be mixed-case.
+        if (s.name && s.name.toUpperCase().includes(q)) return true;
+        return false;
+      })
       .slice(0, 100);
   }, [query, cache, tabProviderId]);
 
@@ -124,15 +127,19 @@ export function SymbolSelector() {
                 key={`${tabProviderId}|${s.symbol}`}
                 onClick={() => handlePick(s)}
                 className={cn(
-                  "flex items-center justify-between border-b border-tv-border px-4 py-2 text-left text-xs hover:bg-tv-panel-hover",
+                  "flex items-center justify-between gap-3 border-b border-tv-border px-4 py-2 text-left text-xs hover:bg-tv-panel-hover",
                   s.symbol === symbol && tabProviderId === activeProviderId && "bg-tv-panel-hover",
                 )}
               >
-                <div className="flex items-center gap-3">
-                  <span className="font-semibold text-tv-text">{s.baseAsset}</span>
-                  <span className="text-tv-text-muted">/ {s.quoteAsset}</span>
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <span className="font-semibold text-tv-text">{s.symbol}</span>
+                  {s.name ? (
+                    <span className="truncate text-tv-text-muted">{s.name}</span>
+                  ) : (
+                    <span className="text-tv-text-muted">/ {s.quoteAsset}</span>
+                  )}
                 </div>
-                <span className="text-tv-text-muted">{s.symbol}</span>
+                <span className="shrink-0 text-tv-text-dim">{s.quoteAsset}</span>
               </button>
             ))}
           </div>
