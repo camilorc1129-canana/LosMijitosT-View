@@ -12,6 +12,7 @@ import {
   type IPriceLine,
   type UTCTimestamp,
 } from "lightweight-charts";
+import { RefreshCw } from "lucide-react";
 import { sma, ema, rsi, macd, awesomeOscillator, heikinAshi } from "@/lib/indicators";
 import type { Candle, Timeframe } from "@/lib/binance/types";
 import { getProvider } from "@/lib/providers";
@@ -171,8 +172,15 @@ export function PriceChart({ symbol, timeframe }: Props) {
   const [paneOffsets, setPaneOffsets] = useState<PaneOffset[]>([]);
   const [measure, setMeasure] = useState<MeasureState>(INITIAL_MEASURE);
   const [renderTick, setRenderTick] = useState(0);
+  // Bumped by the manual refresh button to re-run the data load on demand
+  // (used for snapshot providers like Twelve Data that don't stream live).
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
   const measureRef = useRef(measure);
   measureRef.current = measure;
+
+  const activeProvider = getProvider(providerId);
+  const isSnapshotProvider = activeProvider.market !== "crypto";
 
   // Tick every second to keep elapsed time current
   useEffect(() => {
@@ -1035,13 +1043,15 @@ export function PriceChart({ symbol, timeframe }: Props) {
       }
     }
 
-    load();
+    load().finally(() => {
+      if (!cancelled) setRefreshing(false);
+    });
 
     return () => {
       cancelled = true;
       if (unsub) unsub();
     };
-  }, [symbol, timeframe, providerId]);
+  }, [symbol, timeframe, providerId, refreshNonce]);
 
   const greenOrRed = (n: number) =>
     n >= 0 ? "text-tv-green" : "text-tv-red";
@@ -1190,7 +1200,21 @@ export function PriceChart({ symbol, timeframe }: Props) {
             <span className="text-tv-text-muted">·</span>
             <span className="uppercase text-tv-text-muted">{timeframe}</span>
             <span className="text-tv-text-muted">·</span>
-            <span className="text-tv-text-muted">Binance</span>
+            <span className="text-tv-text-muted">{activeProvider.name}</span>
+            {isSnapshotProvider && (
+              <button
+                onClick={() => {
+                  setRefreshing(true);
+                  setRefreshNonce((n) => n + 1);
+                }}
+                disabled={refreshing}
+                title="Actualizar precio (datos bajo demanda)"
+                aria-label="Actualizar"
+                className="pointer-events-auto ml-1 rounded p-0.5 text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text disabled:opacity-50"
+              >
+                <RefreshCw className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`} />
+              </button>
+            )}
           </div>
           {hover && (
             <div className="flex items-center gap-x-3 text-[11px]">
