@@ -44,34 +44,15 @@ export function Watchlist() {
   useEffect(() => {
     const providerIds = Object.keys(byProvider);
     if (providerIds.length === 0) return;
-    let cancelled = false;
     const unsubs: Array<() => void> = [];
 
     for (const providerId of providerIds) {
       const symbols = byProvider[providerId];
       const provider = getProvider(providerId);
 
-      // Initial snapshot per provider.
-      provider
-        .fetchTickers24h(symbols)
-        .then((tickers) => {
-          if (cancelled) return;
-          setRows((prev) => {
-            const next = { ...prev };
-            for (const t of tickers) {
-              next[`${providerId}|${t.symbol}`] = {
-                symbol: t.symbol,
-                providerId,
-                price: t.lastPrice,
-                pct: t.priceChangePercent,
-              };
-            }
-            return next;
-          });
-        })
-        .catch(console.error);
-
-      // Live updates (WS for Binance, polling for stocks providers).
+      // subscribeMiniTickers already fires an initial fetch internally —
+      // calling fetchTickers24h here too would double the credit cost on
+      // Twelve Data (billed per symbol) and instantly hit the daily quota.
       const unsub = provider.subscribeMiniTickers(symbols, (tick) => {
         const key = `${providerId}|${tick.symbol}`;
         setRows((prev) => {
@@ -100,7 +81,6 @@ export function Watchlist() {
     }
 
     return () => {
-      cancelled = true;
       unsubs.forEach((u) => u());
     };
   }, [byProvider]);
