@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import type { Ticker24h } from "@/lib/binance/types";
-import { TWELVEDATA_BASE, getApiKey, missingKeyResponse } from "../_shared";
+import { TWELVEDATA_BASE, getApiKey, missingKeyResponse, rateLimitResponse } from "../_shared";
 
 interface TwelveDataQuote {
   symbol: string;
@@ -52,14 +52,15 @@ export async function GET(request: NextRequest) {
   try {
     const upstream = await fetch(url, { cache: "no-store" });
     if (upstream.status === 429) {
-      return Response.json({ error: "rate_limited" }, { status: 429 });
+      const body = await upstream.text().catch(() => "");
+      return rateLimitResponse(body);
     }
     if (!upstream.ok) {
       return Response.json({ error: `twelvedata ${upstream.status}` }, { status: 502 });
     }
     const q = (await upstream.json()) as TwelveDataQuote;
     if (q.code === 429) {
-      return Response.json({ error: "rate_limited" }, { status: 429 });
+      return rateLimitResponse(q.message);
     }
     const ticker = toTicker(q, symbol);
     if (!ticker) {

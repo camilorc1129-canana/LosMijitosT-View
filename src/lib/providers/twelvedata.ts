@@ -7,6 +7,7 @@ import type {
   SymbolInfo,
   DataProvider,
 } from "./types";
+import { shouldAutoPollStocks, nextUtcMidnightMs } from "./market-hours";
 
 /**
  * Default watchlist when the user first switches to Twelve Data. Kept
@@ -27,26 +28,22 @@ export const DEFAULT_TWELVEDATA_WATCHLIST: string[] = [
 ];
 
 /**
- * Polling cadences tuned for Twelve Data's 8 credits/min free tier.
+ * Twelve Data free tier: 8 credits/min AND 800 credits/day, billed per
+ * symbol. Continuous polling drains 800/day in a few hours, so stocks are
+ * treated as SNAPSHOT data, not live:
  *
- * IMPORTANT: Twelve Data bills the quote-batch endpoint **per symbol**,
- * not per request. A watchlist of N symbols consumed every poll = N
- * credits. With N=10 and polling every 60 s the watchlist alone burns
- * 10 credits/min, exceeding the budget before the chart even loads.
+ * - The chart loads once (PriceChart's initial fetchKlines); subscribeKline
+ *   then refreshes the last bar slowly and only when the tab is visible AND
+ *   the US market is open.
+ * - The watchlist fetches once on mount, then refreshes on the same slow,
+ *   gated cadence.
+ * - A manual refresh button (see PriceChart) bypasses the gate for an
+ *   on-demand pull.
  *
- * Compromise: poll the watchlist every 5 minutes (12 credits/5min =
- * 2.4/min averaged for a 10-symbol list). The chart and BottomPanel
- * use single-symbol endpoints which cost 1 credit each.
- *
- * - Chart at 25 s → 3 credits/min
- * - BottomPanel at 60 s → 1 credit/min (via pollingIntervalMs)
- * - Watchlist at 300 s → ~2 credits/min averaged for 10 symbols
- *
- * Steady-state ≈ 6 credits/min on a 10-symbol watchlist. Symbol changes
- * cost an extra 2 credits each (1 chart + 1 quote), so a few clicks/min
- * still fit before the back-off cooldown kicks in.
+ * 5-minute cadence, gated, means a single visible stock chart costs ~12
+ * credits/hour during market hours and 0 when closed/backgrounded.
  */
-const KLINE_POLL_MS = 25_000;
+const KLINE_POLL_MS = 300_000;
 const TICKER_POLL_MS = 300_000;
 
 // ─── Client-side rate-limit back-off (persisted across reloads) ───
@@ -58,7 +55,7 @@ const TICKER_POLL_MS = 300_000;
 // it — otherwise the post-refresh load burst would re-trip the limit
 // immediately.
 
-const RATE_LIMIT_COOLDOWN_MS = 60_000;
+const MINUTE_COOLDOWN_MS = 60_000;
 const RATE_LIMIT_KEY = "td-rate-limit-until";
 
 function readPersistedDeadline(): number {
@@ -75,14 +72,21 @@ function isRateLimited(): boolean {
   return Date.now() < rateLimitedUntil;
 }
 
-function markRateLimited() {
-  rateLimitedUntil = Date.now() + RATE_LIMIT_COOLDOWN_MS;
+/**
+ * Engage the cooldown. A per-minute limit pauses for 60 s; the per-day
+ * quota pauses until the next UTC midnight (when Twelve Data resets it) so
+ * we stop the every-60s retry loop that otherwise re-trips the exhausted
+ * daily quota forever.
+ */
+function markRateLimited(scope: "day" | "minute") {
+  rateLimitedUntil =
+    scope === "day" ? nextUtcMidnightMs() : Date.now() + MINUTE_COOLDOWN_MS;
   if (typeof window !== "undefined") {
     window.localStorage.setItem(RATE_LIMIT_KEY, String(rateLimitedUntil));
   }
   console.warn(
-    "[twelvedata] rate-limit hit; pausing requests until",
-    new Date(rateLimitedUntil).toLocaleTimeString(),
+    `[twelvedata] ${scope} rate-limit hit; pausing requests until`,
+    new Date(rateLimitedUntil).toLocaleString(),
   );
 }
 
@@ -92,8 +96,16 @@ async function rateAwareFetch(url: string, init?: RequestInit): Promise<Response
   }
   const res = await fetch(url, init);
   if (res.status === 429) {
-    markRateLimited();
-    throw new Error("twelvedata: rate-limit cooldown engaged");
+    // Route tags the scope in the body: { error: "rate_limited", scope }.
+    let scope: "day" | "minute" = "minute";
+    try {
+      const body = (await res.clone().json()) as { scope?: "day" | "minute" };
+      if (body.scope === "day") scope = "day";
+    } catch {
+      // default to minute
+    }
+    markRateLimited(scope);
+    throw new Error(`twelvedata: rate-limit cooldown engaged (${scope})`);
   }
   return res;
 }
@@ -138,20 +150,17 @@ async function fetchSymbols(): Promise<SymbolInfo[]> {
 // ─── "Live" updates via polling (no free-tier WebSocket) ───
 
 /**
- * For each kline subscription, re-fetch the last ~2 candles every
- * KLINE_POLL_MS. The PriceChart consumer already handles
- * "same time → update last bar, new time → append" so passing the latest
- * bar via onCandle is enough to keep the chart in sync.
- *
- * We request a small `limit=2` to keep the upstream payload tiny — only
- * the in-progress bar and the immediately preceding one to bridge bucket
- * transitions if a poll lands right after the bucket closed.
+ * Slow, gated refresh of the active chart's last bar. The PriceChart
+ * consumer already did the initial full load, so this only keeps the
+ * latest bar fresh. Interval ticks are skipped when the tab is hidden or
+ * the US market is closed — no immediate poll here (the chart already has
+ * data; the manual refresh button covers on-demand pulls).
  */
 function subscribeKline(sub: KlineSubscription): () => void {
   let cancelled = false;
 
   const poll = async () => {
-    if (cancelled) return;
+    if (cancelled || !shouldAutoPollStocks()) return;
     try {
       const klines = await fetchKlines(sub.symbol, sub.interval, 2);
       if (cancelled) return;
@@ -161,7 +170,6 @@ function subscribeKline(sub: KlineSubscription): () => void {
     }
   };
 
-  poll();
   const id = setInterval(poll, KLINE_POLL_MS);
   return () => {
     cancelled = true;
@@ -173,8 +181,10 @@ function subscribeMiniTickers(symbols: string[], onTick: TickHandler): () => voi
   if (symbols.length === 0) return () => {};
   let cancelled = false;
 
-  const poll = async () => {
-    if (cancelled) return;
+  const poll = async (force = false) => {
+    // Initial poll (force) always runs so the watchlist shows the last
+    // close even outside market hours. Interval polls are gated.
+    if (cancelled || (!force && !shouldAutoPollStocks())) return;
     try {
       const tickers = await fetchTickers24h(symbols);
       if (cancelled) return;
@@ -192,8 +202,8 @@ function subscribeMiniTickers(symbols: string[], onTick: TickHandler): () => voi
     }
   };
 
-  poll();
-  const id = setInterval(poll, TICKER_POLL_MS);
+  poll(true);
+  const id = setInterval(() => poll(false), TICKER_POLL_MS);
   return () => {
     cancelled = true;
     clearInterval(id);
@@ -205,9 +215,10 @@ export const twelvedataProvider: DataProvider = {
   name: "Twelve Data",
   market: "stocks",
   defaultSymbol: "AAPL",
-  // 8 req/min budget; 60 s for the BottomPanel pairs with chart 25 s and
-  // watchlist 60 s so the first-minute burst tops out at 7 calls.
-  pollingIntervalMs: 60_000,
+  // Snapshot model: BottomPanel refreshes the active stock quote slowly
+  // (5 min) and only when visible + market open (BottomPanel gates on
+  // provider.market === "stocks").
+  pollingIntervalMs: 300_000,
 
   fetchKlines,
   fetchTicker24h,

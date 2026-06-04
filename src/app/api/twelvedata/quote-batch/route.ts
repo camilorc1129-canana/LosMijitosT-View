@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import type { Ticker24h } from "@/lib/binance/types";
-import { TWELVEDATA_BASE, getApiKey, missingKeyResponse } from "../_shared";
+import { TWELVEDATA_BASE, getApiKey, missingKeyResponse, rateLimitResponse } from "../_shared";
 
 interface TwelveDataQuote {
   symbol: string;
@@ -55,7 +55,8 @@ export async function GET(request: NextRequest) {
   try {
     const upstream = await fetch(url, { cache: "no-store" });
     if (upstream.status === 429) {
-      return Response.json({ error: "rate_limited" }, { status: 429 });
+      const body = await upstream.text().catch(() => "");
+      return rateLimitResponse(body);
     }
     if (!upstream.ok) {
       return Response.json({ error: `twelvedata ${upstream.status}` }, { status: 502 });
@@ -63,7 +64,7 @@ export async function GET(request: NextRequest) {
     const data = (await upstream.json()) as TwelveDataQuote | Record<string, TwelveDataQuote>;
     // 200 + code:429 in the body when free-tier credits are exhausted.
     if ((data as TwelveDataQuote).code === 429) {
-      return Response.json({ error: "rate_limited" }, { status: 429 });
+      return rateLimitResponse((data as TwelveDataQuote).message);
     }
 
     // Single-symbol responses come as a flat object; multi-symbol responses

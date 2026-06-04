@@ -29,3 +29,13 @@ export function missingKeyResponse(): Response {
     { status: 500 },
   );
 }
+
+/**
+ * Build a 429 response, tagging whether the upstream limit was the per-day
+ * quota or the per-minute rate limit. The client uses `scope` to decide how
+ * long to back off: "day" → until the next UTC midnight, "minute" → 60 s.
+ */
+export function rateLimitResponse(upstreamMessage?: string): Response {
+  const scope = upstreamMessage && /day/i.test(upstreamMessage) ? "day" : "minute";
+  return Response.json({ error: "rate_limited", scope }, { status: 429 });
+}
