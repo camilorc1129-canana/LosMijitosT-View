@@ -17,6 +17,21 @@ import {
 
 const DISMISSED_KEY = "td-quota-alert-dismissed-until";
 
+/** Human-readable time remaining until `deadline` (epoch ms), in Spanish. */
+function formatTimeRemaining(deadline: number): string {
+  const diffMs = Math.max(0, deadline - Date.now());
+  const totalMinutes = Math.ceil(diffMs / 60_000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours <= 0) {
+    return `${minutes} ${minutes === 1 ? "minuto" : "minutos"}`;
+  }
+  const hPart = `${hours} ${hours === 1 ? "hora" : "horas"}`;
+  if (minutes === 0) return hPart;
+  return `${hPart} y ${minutes} ${minutes === 1 ? "minuto" : "minutos"}`;
+}
+
 /**
  * Shows a modal when the Twelve Data daily quota is exhausted. Appears once
  * per exhaustion period: dismissing it records the period's deadline so it
@@ -25,6 +40,7 @@ const DISMISSED_KEY = "td-quota-alert-dismissed-until";
  */
 export function QuotaAlertModal() {
   const [open, setOpen] = useState(false);
+  const [remaining, setRemaining] = useState<string>("");
 
   useEffect(() => {
     const maybeShow = () => {
@@ -32,6 +48,7 @@ export function QuotaAlertModal() {
       if (deadline === null) return;
       const dismissed = window.localStorage.getItem(DISMISSED_KEY);
       if (dismissed === String(deadline)) return; // already acknowledged this period
+      setRemaining(formatTimeRemaining(deadline));
       setOpen(true);
     };
 
@@ -56,8 +73,9 @@ export function QuotaAlertModal() {
         <DialogHeader>
           <DialogTitle>Lo sentimos</DialogTitle>
           <DialogDescription className="text-tv-text-muted">
-            Has agotado el límite máximo de uso del mercado de acciones del
-            proveedor Twelve Data por hoy. En 24 horas podrás usarlo de nuevo.
+            Has agotado el límite máximo gratuito diario del uso del mercado de
+            acciones del proveedor Twelve Data. En {remaining} podrás volverlo a
+            usar.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
