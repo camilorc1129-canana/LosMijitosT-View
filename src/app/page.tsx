@@ -6,9 +6,11 @@ import { RightSidebar } from "@/components/layout/RightSidebar";
 import { BottomPanel } from "@/components/layout/BottomPanel";
 import { PriceChart } from "@/components/chart/PriceChart";
 import { IndicatorSettingsDialog } from "@/components/chart/IndicatorSettingsDialog";
+import { QuotaAlertModal } from "@/components/QuotaAlertModal";
 import { useChartStore } from "@/lib/store/chart-store";
 
 export default function HomePage() {
+  const providerId = useChartStore((s) => s.providerId);
   const symbol = useChartStore((s) => s.symbol);
   const timeframe = useChartStore((s) => s.timeframe);
 
@@ -19,13 +21,18 @@ export default function HomePage() {
         <LeftSidebar />
         <main className="relative flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1">
-            <PriceChart symbol={symbol} timeframe={timeframe} />
+            <PriceChart
+              key={`${providerId}-${symbol}-${timeframe}`}
+              symbol={symbol}
+              timeframe={timeframe}
+            />
           </div>
         </main>
         <RightSidebar />
       </div>
       <BottomPanel />
       <IndicatorSettingsDialog />
+      <QuotaAlertModal />
     </div>
   );
 }

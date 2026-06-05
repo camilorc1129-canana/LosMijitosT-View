@@ -2,32 +2,44 @@
 
 import { useEffect, useState } from "react";
 import { useChartStore } from "@/lib/store/chart-store";
-import { fetchTicker24h } from "@/lib/binance/rest";
+import { getProvider } from "@/lib/providers";
+import { shouldAutoPollStocks } from "@/lib/providers/market-hours";
 import type { Ticker24h } from "@/lib/binance/types";
 import { formatPrice, formatPct, formatVolume } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export function BottomPanel() {
+  const providerId = useChartStore((s) => s.providerId);
   const symbol = useChartStore((s) => s.symbol);
   const [t, setT] = useState<Ticker24h | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setT(null);
-    const load = () => {
-      fetchTicker24h(symbol)
+    const provider = getProvider(providerId);
+    const isStocks = provider.market === "stocks";
+    const load = (force = false) => {
+      // For stocks, skip auto refreshes when the tab is hidden or the
+      // market is closed to conserve the daily credit quota. The initial
+      // load (force) always runs so the panel shows the last close.
+      if (isStocks && !force && !shouldAutoPollStocks()) return;
+      provider.fetchTicker24h(symbol)
         .then((x) => {
           if (!cancelled) setT(x);
         })
         .catch(console.error);
     };
-    load();
-    const id = setInterval(load, 5000);
+    load(true);
+    // Twelve Data surfaces a slow cadence via pollingIntervalMs; default 5 s
+    // otherwise (Binance, which has no per-minute cap on /quote).
+    const id = setInterval(() => load(false), provider.pollingIntervalMs ?? 5000);
     return () => {
       cancelled = true;
       clearInterval(id);
     };
-  }, [symbol]);
+  }, [symbol, providerId]);
+
+  const provider = getProvider(providerId);
 
   const upClass = (n: number) => (n >= 0 ? "text-tv-green" : "text-tv-red");
 
@@ -59,7 +71,7 @@ export function BottomPanel() {
       />
       <div className="ml-auto flex items-center gap-2 text-[10px] text-tv-text-dim">
         <span className="inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-tv-green" />
-        <span>Binance · Live</span>
+        <span>{provider.name} · Live</span>
       </div>
     </div>
   );

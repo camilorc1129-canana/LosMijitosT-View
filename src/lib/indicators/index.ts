@@ -12,6 +12,12 @@ export interface MACDPoint {
   histogram: number;
 }
 
+export interface AOPoint {
+  time: number;
+  value: number;
+  color: string;
+}
+
 /**
  * Simple Moving Average
  */
@@ -113,5 +119,67 @@ export function macd(
     out.push({ time: p.time, macd: p.value, signal: s, histogram: p.value - s });
   }
   void slowStartTime;
+  return out;
+}
+
+/**
+ * Heikin Ashi — transforma velas normales a velas HA.
+ * haClose = (O+H+L+C)/4
+ * haOpen  = (prevHaOpen + prevHaClose) / 2  [primer bar: (O+C)/2]
+ * haHigh  = max(H, haOpen, haClose)
+ * haLow   = min(L, haOpen, haClose)
+ */
+export function heikinAshi(candles: Candle[]): Candle[] {
+  if (candles.length === 0) return [];
+  const out: Candle[] = [];
+  for (let i = 0; i < candles.length; i++) {
+    const c = candles[i];
+    const haClose = (c.open + c.high + c.low + c.close) / 4;
+    const haOpen =
+      i === 0
+        ? (c.open + c.close) / 2
+        : (out[i - 1].open + out[i - 1].close) / 2;
+    out.push({
+      time: c.time,
+      open: haOpen,
+      high: Math.max(c.high, haOpen, haClose),
+      low: Math.min(c.low, haOpen, haClose),
+      close: haClose,
+      volume: c.volume,
+    });
+  }
+  return out;
+}
+
+/**
+ * Awesome Oscillator — SMA(hl2, 5) − SMA(hl2, 34).
+ * Green bar when AO rising (diff > 0), red when falling (diff ≤ 0).
+ */
+export function awesomeOscillator(candles: Candle[]): AOPoint[] {
+  if (candles.length < 34) return [];
+
+  const hl2 = candles.map((c) => (c.high + c.low) / 2);
+
+  const sma5: number[] = [];
+  const sma34: number[] = [];
+  let sum5 = 0;
+  let sum34 = 0;
+  for (let i = 0; i < candles.length; i++) {
+    sum5 += hl2[i];
+    sum34 += hl2[i];
+    if (i >= 5) sum5 -= hl2[i - 5];
+    if (i >= 34) sum34 -= hl2[i - 34];
+    sma5.push(i >= 4 ? sum5 / 5 : NaN);
+    sma34.push(i >= 33 ? sum34 / 34 : NaN);
+  }
+
+  const out: AOPoint[] = [];
+  let prevAO = NaN;
+  for (let i = 33; i < candles.length; i++) {
+    const ao = sma5[i] - sma34[i];
+    const diff = isNaN(prevAO) ? ao : ao - prevAO;
+    out.push({ time: candles[i].time, value: ao, color: diff <= 0 ? "#F44336" : "#009688" });
+    prevAO = ao;
+  }
   return out;
 }

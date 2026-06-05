@@ -12,14 +12,16 @@ import {
   type IPriceLine,
   type UTCTimestamp,
 } from "lightweight-charts";
-import { fetchKlines } from "@/lib/binance/rest";
-import { getBinanceWS } from "@/lib/binance/ws";
-import { ema, rsi, macd } from "@/lib/indicators";
+import { RefreshCw } from "lucide-react";
+import { sma, ema, rsi, macd, awesomeOscillator, heikinAshi } from "@/lib/indicators";
 import type { Candle, Timeframe } from "@/lib/binance/types";
+import { getProvider } from "@/lib/providers";
 import {
   INDICATOR_COLORS,
+  EMA6X_COLOR,
   useChartStore,
   type IndicatorKey,
+  type CandleType,
 } from "@/lib/store/chart-store";
 import { formatPrice, formatVolume } from "@/lib/format";
 import { IndicatorPill } from "./IndicatorPill";
@@ -44,6 +46,29 @@ function durationLabel(aTime: number, bTime: number): string {
   if (days > 0) return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
   if (hours > 0) return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
   return `${minutes}m`;
+}
+
+function formatElapsed(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  const mm = m.toString().padStart(2, "0");
+  const ss = s.toString().padStart(2, "0");
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+const TIMEFRAME_SECONDS: Record<Timeframe, number> = {
+  "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
+  "1h": 3600, "2h": 7200, "4h": 14400, "6h": 21600, "8h": 28800, "12h": 43200,
+  "1d": 86400, "3d": 259200, "1w": 604800, "1M": 2592000,
+};
+
+interface LiveCandle {
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  time: number;
 }
 
 interface Props {
@@ -84,6 +109,8 @@ interface LastValues {
   macdSignal?: number;
   macdHist?: number;
   volume?: number;
+  ao?: number;
+  sma?: number;
 }
 
 interface PaneOffset {
@@ -105,12 +132,17 @@ export function PriceChart({ symbol, timeframe }: Props) {
   const macdRef = useRef<ISeriesApi<"Line"> | null>(null);
   const macdSignalRef = useRef<ISeriesApi<"Line"> | null>(null);
   const macdHistRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const aoRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const ema6xRefs = useRef<Array<ISeriesApi<"Line"> | null>>([null, null, null, null, null, null]);
+  const smaRef = useRef<ISeriesApi<"Line"> | null>(null);
   const candlesRef = useRef<Candle[]>([]);
   const priceLinesMapRef = useRef<Map<string, IPriceLine>>(new Map());
 
+  const providerId = useChartStore((s) => s.providerId);
   const indicators = useChartStore((s) => s.indicators);
   const hidden = useChartStore((s) => s.hidden);
   const config = useChartStore((s) => s.config);
+  const candleType = useChartStore((s) => s.candleType);
   const tool = useChartStore((s) => s.tool);
   const priceLines = useChartStore((s) => s.priceLines);
   const addPriceLine = useChartStore((s) => s.addPriceLine);
@@ -127,15 +159,37 @@ export function PriceChart({ symbol, timeframe }: Props) {
   symbolRef.current = symbol;
   const configRef = useRef(config);
   configRef.current = config;
+  const candleTypeRef = useRef<CandleType>(candleType);
+  candleTypeRef.current = candleType;
 
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [lastPrice, setLastPrice] = useState<{ value: number; pct: number } | null>(null);
+  const [currentCandle, setCurrentCandle] = useState<LiveCandle | null>(null);
+  const [elapsed, setElapsed] = useState(0);
   const [lastValues, setLastValues] = useState<LastValues>({});
+  const [lastEma6x, setLastEma6x] = useState<(number | undefined)[]>([]);
+  const [ema6xExpanded, setEma6xExpanded] = useState(false);
   const [paneOffsets, setPaneOffsets] = useState<PaneOffset[]>([]);
   const [measure, setMeasure] = useState<MeasureState>(INITIAL_MEASURE);
   const [renderTick, setRenderTick] = useState(0);
+  // Bumped by the manual refresh button to re-run the data load on demand
+  // (used for snapshot providers like Twelve Data that don't stream live).
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
   const measureRef = useRef(measure);
   measureRef.current = measure;
+
+  const activeProvider = getProvider(providerId);
+  const isSnapshotProvider = activeProvider.market !== "crypto";
+
+  // Tick every second to keep elapsed time current
+  useEffect(() => {
+    if (!currentCandle) return;
+    const tick = () => setElapsed(Math.max(0, Math.floor(Date.now() / 1000) - currentCandle.time));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [currentCandle?.time]);
 
   // Helper — compute pane top offsets from chart layout
   function recomputePaneOffsets() {
@@ -186,7 +240,30 @@ export function PriceChart({ symbol, timeframe }: Props) {
       autoSize: true,
     });
 
-    // PANE 0 — Candles + EMAs
+    // PANE 0 — EMAs primero (debajo), velas al final (encima)
+    ema20Ref.current = chart.addSeries(LineSeries, {
+      color: INDICATOR_COLORS.ema20,
+      lineWidth: (configRef.current.ema20Width || 1) as 1 | 2 | 3 | 4,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    });
+    ema50Ref.current = chart.addSeries(LineSeries, {
+      color: INDICATOR_COLORS.ema50,
+      lineWidth: (configRef.current.ema50Width || 1) as 1 | 2 | 3 | 4,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    });
+    ema200Ref.current = chart.addSeries(LineSeries, {
+      color: INDICATOR_COLORS.ema200,
+      lineWidth: (configRef.current.ema200Width || 2) as 1 | 2 | 3 | 4,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    });
+
+    // Velas al final → se renderizan encima de las EMAs
     candleSeriesRef.current = chart.addSeries(CandlestickSeries, {
       upColor: TV_COLORS.green,
       downColor: TV_COLORS.red,
@@ -196,24 +273,6 @@ export function PriceChart({ symbol, timeframe }: Props) {
       wickDownColor: TV_COLORS.red,
       priceLineColor: TV_COLORS.textMuted,
       priceLineStyle: 2,
-    });
-
-    ema20Ref.current = chart.addSeries(LineSeries, {
-      color: INDICATOR_COLORS.ema20,
-      lineWidth: 1,
-      priceLineVisible: false,
-      lastValueVisible: false,
-    });
-    ema50Ref.current = chart.addSeries(LineSeries, {
-      color: INDICATOR_COLORS.ema50,
-      lineWidth: 1,
-      priceLineVisible: false,
-      lastValueVisible: false,
-    });
-    ema200Ref.current = chart.addSeries(LineSeries, {
-      color: INDICATOR_COLORS.ema200,
-      lineWidth: 2,
-      priceLineVisible: false,
       lastValueVisible: false,
     });
 
@@ -297,11 +356,14 @@ export function PriceChart({ symbol, timeframe }: Props) {
       }
     });
 
-    // Re-render measure overlay on pan / zoom so pixel coords stay in sync
+    // Re-render overlays on pan / zoom (horizontal)
     const tsRangeHandler = () => setRenderTick((t) => t + 1);
     chart.timeScale().subscribeVisibleTimeRangeChange(tsRangeHandler);
     const logicalRangeHandler = () => setRenderTick((t) => t + 1);
     chart.timeScale().subscribeVisibleLogicalRangeChange(logicalRangeHandler);
+    // Re-render overlays on vertical price scale scroll/zoom (wheel event)
+    const wheelHandler = () => requestAnimationFrame(() => setRenderTick((t) => t + 1));
+    containerRef.current.addEventListener("wheel", wheelHandler, { passive: true });
 
     // ResizeObserver — recompute pane offsets when chart container resizes
     const ro = new ResizeObserver(() => {
@@ -313,6 +375,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
     return () => {
       chart.timeScale().unsubscribeVisibleTimeRangeChange(tsRangeHandler);
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(logicalRangeHandler);
+      containerRef.current?.removeEventListener("wheel", wheelHandler);
       ro.disconnect();
       chart.remove();
       chartRef.current = null;
@@ -328,6 +391,9 @@ export function PriceChart({ symbol, timeframe }: Props) {
       macdRef.current = null;
       macdSignalRef.current = null;
       macdHistRef.current = null;
+      aoRef.current = null;
+      ema6xRefs.current = [null, null, null, null, null, null];
+      smaRef.current = null;
     };
   }, []);
 
@@ -468,6 +534,100 @@ export function PriceChart({ symbol, timeframe }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [indicators.macd, indicators.rsi]);
 
+  // AO pane
+  useEffect(() => {
+    if (!chartRef.current) return;
+    if (indicators.ao && !aoRef.current) {
+      const paneIndex = 1 + (indicators.rsi ? 1 : 0) + (indicators.macd ? 1 : 0);
+      const h = chartRef.current.addSeries(
+        HistogramSeries,
+        { priceLineVisible: false, lastValueVisible: false },
+        paneIndex,
+      );
+      aoRef.current = h;
+      try {
+        chartRef.current.panes()[paneIndex]?.setStretchFactor(1);
+        chartRef.current.panes()[0]?.setStretchFactor(3);
+      } catch {}
+      updateAO();
+    } else if (!indicators.ao && aoRef.current && chartRef.current) {
+      chartRef.current.removeSeries(aoRef.current);
+      aoRef.current = null;
+    }
+    requestAnimationFrame(() => recomputePaneOffsets());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [indicators.ao, indicators.rsi, indicators.macd]);
+
+  // EMA ×6 — main pane overlay (pane 0)
+  useEffect(() => {
+    if (!chartRef.current) return;
+    if (indicators.ema6x) {
+      const refs = ema6xRefs.current;
+      const cfg = configRef.current;
+      const ema6xColors = [
+        cfg.ema6xColor1 || EMA6X_COLOR,
+        cfg.ema6xColor2 || EMA6X_COLOR,
+        cfg.ema6xColor3 || EMA6X_COLOR,
+        cfg.ema6xColor4 || EMA6X_COLOR,
+        cfg.ema6xColor5 || EMA6X_COLOR,
+        cfg.ema6xColor6 || EMA6X_COLOR,
+      ];
+      const ema6xWidths = [
+        (cfg.ema6xWidth1 || 2) as 1 | 2 | 3 | 4,
+        (cfg.ema6xWidth2 || 3) as 1 | 2 | 3 | 4,
+        (cfg.ema6xWidth3 || 2) as 1 | 2 | 3 | 4,
+        (cfg.ema6xWidth4 || 2) as 1 | 2 | 3 | 4,
+        (cfg.ema6xWidth5 || 2) as 1 | 2 | 3 | 4,
+        (cfg.ema6xWidth6 || 2) as 1 | 2 | 3 | 4,
+      ];
+      for (let i = 0; i < 6; i++) {
+        if (!refs[i]) {
+          refs[i] = chartRef.current.addSeries(
+            LineSeries,
+            { color: ema6xColors[i], lineWidth: ema6xWidths[i], priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false },
+            0,
+          );
+        } else {
+          refs[i]!.applyOptions({ color: ema6xColors[i], lineWidth: ema6xWidths[i] });
+        }
+      }
+      updateEMA6x();
+    } else {
+      for (let i = 0; i < 6; i++) {
+        if (ema6xRefs.current[i] && chartRef.current) {
+          chartRef.current.removeSeries(ema6xRefs.current[i]!);
+          ema6xRefs.current[i] = null;
+        }
+      }
+    }
+    requestAnimationFrame(() => recomputePaneOffsets());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [indicators.ema6x]);
+
+  // SMA — main pane overlay (pane 0)
+  useEffect(() => {
+    if (!chartRef.current) return;
+    if (indicators.sma && !smaRef.current) {
+      smaRef.current = chartRef.current.addSeries(
+        LineSeries,
+        {
+          color: configRef.current.smaColor || "#26a69a",
+          lineWidth: (configRef.current.smaWidth || 1) as 1 | 2 | 3 | 4,
+          priceLineVisible: false,
+          lastValueVisible: false,
+          crosshairMarkerVisible: false,
+        },
+        0,
+      );
+      updateSMA();
+    } else if (!indicators.sma && smaRef.current && chartRef.current) {
+      chartRef.current.removeSeries(smaRef.current);
+      smaRef.current = null;
+    }
+    requestAnimationFrame(() => recomputePaneOffsets());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [indicators.sma]);
+
   // Visibility — eye toggle (hidden state) + enabled state combined
   useEffect(() => {
     const v = (key: IndicatorKey) => indicators[key] && !hidden[key];
@@ -481,6 +641,10 @@ export function PriceChart({ symbol, timeframe }: Props) {
     if (macdSignalRef.current) macdSignalRef.current.applyOptions({ visible: v("macd") });
     if (macdHistRef.current) macdHistRef.current.applyOptions({ visible: v("macd") });
     if (volumeSeriesRef.current) volumeSeriesRef.current.applyOptions({ visible: v("volume") });
+    if (aoRef.current) aoRef.current.applyOptions({ visible: v("ao") });
+    const ema6xVisible = v("ema6x");
+    for (const ref of ema6xRefs.current) ref?.applyOptions({ visible: ema6xVisible });
+    if (smaRef.current) smaRef.current.applyOptions({ visible: v("sma") });
   }, [indicators, hidden]);
 
   // Recompute indicators when config changes (periods)
@@ -495,6 +659,60 @@ export function PriceChart({ symbol, timeframe }: Props) {
   useEffect(() => {
     updateMACD();
   }, [config.macdFast, config.macdSlow, config.macdSignal]);
+
+  useEffect(() => {
+    updateEMA6x();
+  }, [config.ema6x1, config.ema6x2, config.ema6x3, config.ema6x4, config.ema6x5, config.ema6x6]);
+
+  useEffect(() => {
+    const colors = [
+      config.ema6xColor1 || EMA6X_COLOR,
+      config.ema6xColor2 || EMA6X_COLOR,
+      config.ema6xColor3 || EMA6X_COLOR,
+      config.ema6xColor4 || EMA6X_COLOR,
+      config.ema6xColor5 || EMA6X_COLOR,
+      config.ema6xColor6 || EMA6X_COLOR,
+    ];
+    ema6xRefs.current.forEach((ref, i) => ref?.applyOptions({ color: colors[i] }));
+  }, [config.ema6xColor1, config.ema6xColor2, config.ema6xColor3, config.ema6xColor4, config.ema6xColor5, config.ema6xColor6]);
+
+  useEffect(() => {
+    updateSMA();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.smaLength]);
+
+  useEffect(() => {
+    smaRef.current?.applyOptions({ color: config.smaColor || "#26a69a" });
+  }, [config.smaColor]);
+
+  // React to line width changes
+  useEffect(() => {
+    ema20Ref.current?.applyOptions({ lineWidth: (config.ema20Width || 1) as 1 | 2 | 3 | 4 });
+  }, [config.ema20Width]);
+
+  useEffect(() => {
+    ema50Ref.current?.applyOptions({ lineWidth: (config.ema50Width || 1) as 1 | 2 | 3 | 4 });
+  }, [config.ema50Width]);
+
+  useEffect(() => {
+    ema200Ref.current?.applyOptions({ lineWidth: (config.ema200Width || 2) as 1 | 2 | 3 | 4 });
+  }, [config.ema200Width]);
+
+  useEffect(() => {
+    smaRef.current?.applyOptions({ lineWidth: (config.smaWidth || 1) as 1 | 2 | 3 | 4 });
+  }, [config.smaWidth]);
+
+  useEffect(() => {
+    const widths: (1 | 2 | 3 | 4)[] = [
+      (config.ema6xWidth1 || 2) as 1 | 2 | 3 | 4,
+      (config.ema6xWidth2 || 3) as 1 | 2 | 3 | 4,
+      (config.ema6xWidth3 || 2) as 1 | 2 | 3 | 4,
+      (config.ema6xWidth4 || 2) as 1 | 2 | 3 | 4,
+      (config.ema6xWidth5 || 2) as 1 | 2 | 3 | 4,
+      (config.ema6xWidth6 || 2) as 1 | 2 | 3 | 4,
+    ];
+    ema6xRefs.current.forEach((ref, i) => ref?.applyOptions({ lineWidth: widths[i] }));
+  }, [config.ema6xWidth1, config.ema6xWidth2, config.ema6xWidth3, config.ema6xWidth4, config.ema6xWidth5, config.ema6xWidth6]);
 
   // Sync price lines from store to the candle series
   useEffect(() => {
@@ -536,8 +754,12 @@ export function PriceChart({ symbol, timeframe }: Props) {
     if (tool !== "measure") setMeasure(INITIAL_MEASURE);
   }, [tool]);
 
+  function toDisplay(raw: Candle[]): Candle[] {
+    return candleTypeRef.current === "heikinashi" ? heikinAshi(raw) : raw;
+  }
+
   function updateEMAs() {
-    const c = candlesRef.current;
+    const c = toDisplay(candlesRef.current);
     if (c.length === 0) return;
     const cfg = configRef.current;
     let last20: number | undefined;
@@ -576,7 +798,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
   }
 
   function updateRSI() {
-    const c = candlesRef.current;
+    const c = toDisplay(candlesRef.current);
     if (c.length === 0 || !rsiRef.current) return;
     const cfg = configRef.current;
     const data = rsi(c, cfg.rsi).map((p) => ({
@@ -597,8 +819,41 @@ export function PriceChart({ symbol, timeframe }: Props) {
     setLastValues((prev) => ({ ...prev, rsi: data.at(-1)?.value }));
   }
 
+  function updateEMA6x() {
+    const c = toDisplay(candlesRef.current);
+    if (c.length === 0) return;
+    const cfg = configRef.current;
+    const periods = [
+      cfg.ema6x1 || 10,
+      cfg.ema6x2 || 50,
+      cfg.ema6x3 || 100,
+      cfg.ema6x4 || 200,
+      cfg.ema6x5 || 400,
+      cfg.ema6x6 || 800,
+    ];
+    const vals: (number | undefined)[] = [];
+    for (let i = 0; i < 6; i++) {
+      const ref = ema6xRefs.current[i];
+      if (!ref) { vals.push(undefined); continue; }
+      const data = ema(c, periods[i]);
+      ref.setData(data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })));
+      vals.push(data.at(-1)?.value);
+    }
+    setLastEma6x(vals);
+  }
+
+  function updateAO() {
+    const c = toDisplay(candlesRef.current);
+    if (c.length === 0 || !aoRef.current) return;
+    const data = awesomeOscillator(c);
+    aoRef.current.setData(
+      data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value, color: p.color })),
+    );
+    setLastValues((prev) => ({ ...prev, ao: data.at(-1)?.value }));
+  }
+
   function updateMACD() {
-    const c = candlesRef.current;
+    const c = toDisplay(candlesRef.current);
     if (c.length === 0 || !macdRef.current) return;
     const cfg = configRef.current;
     const m = macd(c, cfg.macdFast, cfg.macdSlow, cfg.macdSignal);
@@ -624,19 +879,64 @@ export function PriceChart({ symbol, timeframe }: Props) {
     }));
   }
 
+  function updateSMA() {
+    const c = toDisplay(candlesRef.current);
+    if (c.length === 0 || !smaRef.current) return;
+    const cfg = configRef.current;
+    const data = sma(c, cfg.smaLength);
+    smaRef.current.setData(
+      data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })),
+    );
+    setLastValues((prev) => ({ ...prev, sma: data.at(-1)?.value }));
+  }
+
+  // Redraw candles when candle type changes (Candles ↔ Heikin Ashi)
+  useEffect(() => {
+    if (!candleSeriesRef.current || candlesRef.current.length === 0) return;
+    const display = toDisplay(candlesRef.current);
+    candleSeriesRef.current.setData(
+      display.map((k) => ({ time: k.time as UTCTimestamp, open: k.open, high: k.high, low: k.low, close: k.close })),
+    );
+    if (volumeSeriesRef.current) {
+      volumeSeriesRef.current.setData(
+        display.map((k) => ({
+          time: k.time as UTCTimestamp,
+          value: k.volume,
+          color: k.close >= k.open ? `${TV_COLORS.green}66` : `${TV_COLORS.red}66`,
+        })),
+      );
+    }
+    const lastDisplay = display.at(-1);
+    if (lastDisplay) {
+      const col = lastDisplay.close >= lastDisplay.open ? TV_COLORS.green : TV_COLORS.red;
+      candleSeriesRef.current.applyOptions({ priceLineColor: col });
+      setCurrentCandle({
+        open: lastDisplay.open,
+        high: lastDisplay.high,
+        low: lastDisplay.low,
+        close: lastDisplay.close,
+        time: lastDisplay.time,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candleType]);
+
   // Load historical data + subscribe live
   useEffect(() => {
     let unsub: (() => void) | null = null;
     let cancelled = false;
 
+    const provider = getProvider(providerId);
+
     async function load() {
       try {
-        const klines = await fetchKlines(symbol, timeframe, 1000);
+        const klines = await provider.fetchKlines(symbol, timeframe, 1000);
         if (cancelled) return;
         candlesRef.current = klines;
+        const display = toDisplay(klines);
         if (candleSeriesRef.current) {
           candleSeriesRef.current.setData(
-            klines.map((k) => ({
+            display.map((k) => ({
               time: k.time as UTCTimestamp,
               open: k.open,
               high: k.high,
@@ -647,7 +947,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
         }
         if (volumeSeriesRef.current) {
           volumeSeriesRef.current.setData(
-            klines.map((k) => ({
+            display.map((k) => ({
               time: k.time as UTCTimestamp,
               value: k.volume,
               color: k.close >= k.open ? `${TV_COLORS.green}66` : `${TV_COLORS.red}66`,
@@ -657,6 +957,9 @@ export function PriceChart({ symbol, timeframe }: Props) {
         updateEMAs();
         updateRSI();
         updateMACD();
+        updateAO();
+        updateEMA6x();
+        updateSMA();
         chartRef.current?.timeScale().fitContent();
         requestAnimationFrame(() => recomputePaneOffsets());
 
@@ -667,10 +970,21 @@ export function PriceChart({ symbol, timeframe }: Props) {
             value: last.close,
             pct: prev.close === 0 ? 0 : ((last.close - prev.close) / prev.close) * 100,
           });
+          const lastDisplay = display.at(-1);
+          if (lastDisplay && candleSeriesRef.current) {
+            setCurrentCandle({
+              open: lastDisplay.open,
+              high: lastDisplay.high,
+              low: lastDisplay.low,
+              close: lastDisplay.close,
+              time: lastDisplay.time,
+            });
+            const col = lastDisplay.close >= lastDisplay.open ? TV_COLORS.green : TV_COLORS.red;
+            candleSeriesRef.current.applyOptions({ priceLineColor: col });
+          }
         }
 
-        const ws = getBinanceWS();
-        unsub = ws.subscribeKline({
+        unsub = provider.subscribeKline({
           symbol,
           interval: timeframe,
           onCandle: (k) => {
@@ -685,27 +999,42 @@ export function PriceChart({ symbol, timeframe }: Props) {
             } else {
               return;
             }
+            const lastDisplay = toDisplay(candlesRef.current).at(-1)!;
             candleSeriesRef.current.update({
-              time: k.time as UTCTimestamp,
-              open: k.open,
-              high: k.high,
-              low: k.low,
-              close: k.close,
+              time: lastDisplay.time as UTCTimestamp,
+              open: lastDisplay.open,
+              high: lastDisplay.high,
+              low: lastDisplay.low,
+              close: lastDisplay.close,
             });
             if (volumeSeriesRef.current) {
               volumeSeriesRef.current.update({
                 time: k.time as UTCTimestamp,
                 value: k.volume,
-                color: k.close >= k.open ? `${TV_COLORS.green}66` : `${TV_COLORS.red}66`,
+                color: lastDisplay.close >= lastDisplay.open ? `${TV_COLORS.green}66` : `${TV_COLORS.red}66`,
               });
             }
             updateEMAs();
             updateRSI();
             updateMACD();
+            updateAO();
+            updateEMA6x();
+            updateSMA();
             const prev = arr[arr.length - 2] ?? lastCandle;
             setLastPrice({
               value: k.close,
               pct: prev && prev.close !== 0 ? ((k.close - prev.close) / prev.close) * 100 : 0,
+            });
+            setCurrentCandle({
+              open: lastDisplay.open,
+              high: lastDisplay.high,
+              low: lastDisplay.low,
+              close: lastDisplay.close,
+              time: lastDisplay.time,
+            });
+            // Update price line color synchronously using the displayed candle direction
+            candleSeriesRef.current.applyOptions({
+              priceLineColor: lastDisplay.close >= lastDisplay.open ? TV_COLORS.green : TV_COLORS.red,
             });
           },
         });
@@ -714,13 +1043,15 @@ export function PriceChart({ symbol, timeframe }: Props) {
       }
     }
 
-    load();
+    load().finally(() => {
+      if (!cancelled) setRefreshing(false);
+    });
 
     return () => {
       cancelled = true;
       if (unsub) unsub();
     };
-  }, [symbol, timeframe]);
+  }, [symbol, timeframe, providerId, refreshNonce]);
 
   const greenOrRed = (n: number) =>
     n >= 0 ? "text-tv-green" : "text-tv-red";
@@ -733,6 +1064,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
   // Determine which pane each indicator lives in (based on current layout)
   const rsiPaneIdx = 1;
   const macdPaneIdx = indicators.rsi ? 2 : 1;
+  const aoPaneIdx = 1 + (indicators.rsi ? 1 : 0) + (indicators.macd ? 1 : 0);
 
   let measureRender: React.ReactNode = null;
   if (
@@ -785,6 +1117,77 @@ export function PriceChart({ symbol, timeframe }: Props) {
       <div ref={containerRef} className="h-full w-full" />
       {measureRender}
 
+      {/* Price label + timer — single HTML flex column, always adjacent, no gap */}
+      {(() => {
+        void renderTick;
+        if (!currentCandle || !candleSeriesRef.current) return null;
+        const y = candleSeriesRef.current.priceToCoordinate(currentCandle.close);
+        if (y === null || !isFinite(y)) return null;
+        const paneH = paneOffsets[0]?.height ?? 9999;
+        const col = currentCandle.close >= currentCandle.open ? TV_COLORS.green : TV_COLORS.red;
+        const top = Math.round(y) - 10;
+        if (top < -20 || top + 40 > paneH) return null;
+        return (
+          <div
+            className="pointer-events-none absolute right-0 z-10 flex flex-col"
+            style={{ top }}
+          >
+            <span
+              className="flex h-5 items-center px-1.5 text-[11px] font-semibold text-white tabular-nums"
+              style={{ backgroundColor: col }}
+            >
+              {formatPrice(currentCandle.close)}
+            </span>
+            <span
+              className="flex h-5 items-center border-t border-white/30 px-1.5 font-mono text-[11px] font-semibold text-white"
+              style={{ backgroundColor: col }}
+            >
+              {elapsed > TIMEFRAME_SECONDS[timeframe] * 2 ? "—" : formatElapsed(elapsed)}
+            </span>
+          </div>
+        );
+      })()}
+
+      {/* Right-axis H / L labels (price + timer are rendered above) */}
+      {(() => {
+        void renderTick;
+        if (!currentCandle || !candleSeriesRef.current) return null;
+        const series = candleSeriesRef.current;
+        const yH = series.priceToCoordinate(currentCandle.high);
+        const yL = series.priceToCoordinate(currentCandle.low);
+        if (yH === null || yL === null) return null;
+        const paneH = paneOffsets[0]?.height ?? 9999;
+        const col = currentCandle.close >= currentCandle.open ? TV_COLORS.green : TV_COLORS.red;
+        const LH = 20;
+        const items = [
+          { y: yH, text: `H  ${formatPrice(currentCandle.high)}` },
+          { y: yL, text: `L  ${formatPrice(currentCandle.low)}` },
+        ];
+        return (
+          <>
+            {items.map((item, i) => {
+              let top = Math.round(item.y - LH / 2);
+              if (top < 0) top = 0;
+              if (top + LH > paneH) top = paneH - LH;
+              return (
+                <div
+                  key={i}
+                  className="pointer-events-none absolute right-0 flex items-center"
+                  style={{ top, height: LH }}
+                >
+                  <span
+                    className="px-1.5 text-[11px] font-semibold text-white"
+                    style={{ backgroundColor: col }}
+                  >
+                    {item.text}
+                  </span>
+                </div>
+              );
+            })}
+          </>
+        );
+      })()}
+
       {/* Top-left of main pane: symbol info + OHLC + Volume pill + EMA pills */}
       <div
         style={{ top: (paneOffsets[0]?.top ?? 0) + 12, left: 12 }}
@@ -797,7 +1200,21 @@ export function PriceChart({ symbol, timeframe }: Props) {
             <span className="text-tv-text-muted">·</span>
             <span className="uppercase text-tv-text-muted">{timeframe}</span>
             <span className="text-tv-text-muted">·</span>
-            <span className="text-tv-text-muted">Binance</span>
+            <span className="text-tv-text-muted">{activeProvider.name}</span>
+            {isSnapshotProvider && (
+              <button
+                onClick={() => {
+                  setRefreshing(true);
+                  setRefreshNonce((n) => n + 1);
+                }}
+                disabled={refreshing}
+                title="Actualizar precio (datos bajo demanda)"
+                aria-label="Actualizar"
+                className="pointer-events-auto ml-1 rounded p-0.5 text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text disabled:opacity-50"
+              >
+                <RefreshCw className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`} />
+              </button>
+            )}
           </div>
           {hover && (
             <div className="flex items-center gap-x-3 text-[11px]">
@@ -824,18 +1241,28 @@ export function PriceChart({ symbol, timeframe }: Props) {
           )}
         </div>
 
-        {/* Row 2: big live price (always present — reserves space even while loading) */}
+        {/* Row 2: precio en vivo con badge de color */}
         <div className="flex h-7 items-center gap-2">
-          {lastPrice ? (
-            <>
-              <span className={`text-lg font-semibold tabular-nums ${greenOrRed(lastPrice.pct)}`}>
-                {formatPrice(lastPrice.value)}
-              </span>
-              <span className={`text-xs ${greenOrRed(lastPrice.pct)}`}>
-                {lastPrice.pct >= 0 ? "+" : ""}
-                {lastPrice.pct.toFixed(2)}%
-              </span>
-            </>
+          {lastPrice && currentCandle ? (() => {
+            const isUp = currentCandle.close >= currentCandle.open;
+            const col = isUp ? TV_COLORS.green : TV_COLORS.red;
+            return (
+              <>
+                <span
+                  className="rounded px-1.5 py-0.5 text-sm font-bold text-white tabular-nums"
+                  style={{ backgroundColor: col }}
+                >
+                  {formatPrice(lastPrice.value)}
+                </span>
+                <span className="text-xs tabular-nums" style={{ color: col }}>
+                  {lastPrice.pct >= 0 ? "+" : ""}{lastPrice.pct.toFixed(2)}%
+                </span>
+              </>
+            );
+          })() : lastPrice ? (
+            <span className={`text-lg font-semibold tabular-nums ${greenOrRed(lastPrice.pct)}`}>
+              {formatPrice(lastPrice.value)}
+            </span>
           ) : (
             <span className="text-xs text-tv-text-muted">Cargando…</span>
           )}
@@ -887,6 +1314,51 @@ export function PriceChart({ symbol, timeframe }: Props) {
               onRemove={() => removeIndicator("volume")}
             />
           )}
+          {indicators.sma && (
+            <IndicatorPill
+              name={`SMA ${config.smaLength}`}
+              value={lastValues.sma !== undefined ? formatPrice(lastValues.sma) : undefined}
+              color={config.smaColor || INDICATOR_COLORS.sma}
+              hidden={hidden.sma}
+              onToggleHide={() => toggleHidden("sma")}
+              onSettings={() => setSettingsTarget("sma")}
+              onRemove={() => removeIndicator("sma")}
+            />
+          )}
+          {indicators.ema6x && (
+            <div className="flex flex-col gap-0.5">
+              {/* EMA principal — siempre visible, click expande las otras 5 */}
+              <div className="cursor-pointer" onClick={() => setEma6xExpanded((p) => !p)}>
+                <IndicatorPill
+                  name={`EMA ${config.ema6x1 || 30}  ${ema6xExpanded ? "▾" : "▸"}`}
+                  value={lastEma6x[0] !== undefined ? formatPrice(lastEma6x[0]!) : undefined}
+                  color={config.ema6xColor1 || EMA6X_COLOR}
+                  hidden={hidden.ema6x}
+                  onToggleHide={() => toggleHidden("ema6x")}
+                  onSettings={() => setSettingsTarget("ema6x")}
+                  onRemove={() => removeIndicator("ema6x")}
+                />
+              </div>
+              {/* Otras 5 EMAs — solo cuando está expandido */}
+              {ema6xExpanded && (
+                [
+                  { period: config.ema6x2 || 60,  color: config.ema6xColor2 || EMA6X_COLOR },
+                  { period: config.ema6x3 || 100, color: config.ema6xColor3 || EMA6X_COLOR },
+                  { period: config.ema6x4 || 200, color: config.ema6xColor4 || EMA6X_COLOR },
+                  { period: config.ema6x5 || 400, color: config.ema6xColor5 || EMA6X_COLOR },
+                  { period: config.ema6x6 || 800, color: config.ema6xColor6 || EMA6X_COLOR },
+                ].map(({ period, color }, idx) => (
+                  <IndicatorPill
+                    key={idx}
+                    name={`EMA ${period}`}
+                    value={lastEma6x[idx + 1] !== undefined ? formatPrice(lastEma6x[idx + 1]!) : undefined}
+                    color={color}
+                    hidden={hidden.ema6x}
+                  />
+                ))
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -904,6 +1376,24 @@ export function PriceChart({ symbol, timeframe }: Props) {
             onToggleHide={() => toggleHidden("rsi")}
             onSettings={() => setSettingsTarget("rsi")}
             onRemove={() => removeIndicator("rsi")}
+          />
+        </div>
+      )}
+
+      {/* AO pane label */}
+      {indicators.ao && paneOffsets[aoPaneIdx] && (
+        <div
+          style={{ top: paneOffsets[aoPaneIdx].top + 6, left: 12 }}
+          className="pointer-events-none absolute z-10"
+        >
+          <IndicatorPill
+            name="AO (5, 34)"
+            value={lastValues.ao !== undefined ? lastValues.ao.toFixed(4) : undefined}
+            color={INDICATOR_COLORS.ao}
+            hidden={hidden.ao}
+            onToggleHide={() => toggleHidden("ao")}
+            onSettings={() => setSettingsTarget("ao")}
+            onRemove={() => removeIndicator("ao")}
           />
         </div>
       )}

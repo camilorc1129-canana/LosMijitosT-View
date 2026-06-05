@@ -1,85 +1,96 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus, X } from "lucide-react";
-import { fetchTickers24h } from "@/lib/binance/rest";
-import { getBinanceWS } from "@/lib/binance/ws";
-import { useChartStore } from "@/lib/store/chart-store";
+import { getProvider } from "@/lib/providers";
+import { useChartStore, type WatchlistEntry } from "@/lib/store/chart-store";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatPrice, formatPct } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 interface Row {
   symbol: string;
+  providerId: string;
   price: number;
   pct: number;
 }
 
+/** Stable string key for a (providerId, symbol) pair — used to index `rows`. */
+function entryKey(e: WatchlistEntry): string {
+  return `${e.providerId}|${e.symbol}`;
+}
+
 export function Watchlist() {
   const watchlist = useChartStore((s) => s.watchlist);
-  const symbol = useChartStore((s) => s.symbol);
+  const activeSymbol = useChartStore((s) => s.symbol);
+  const activeProviderId = useChartStore((s) => s.providerId);
   const setSymbol = useChartStore((s) => s.setSymbol);
+  const setProviderId = useChartStore((s) => s.setProviderId);
   const removeFromWatchlist = useChartStore((s) => s.removeFromWatchlist);
   const openSymbolDialog = useChartStore((s) => s.setSymbolDialogOpen);
   const [rows, setRows] = useState<Record<string, Row>>({});
   const [flash, setFlash] = useState<Record<string, "up" | "down" | null>>({});
 
-  useEffect(() => {
-    if (watchlist.length === 0) return;
-    let cancelled = false;
+  // Group symbols by provider so we open one subscription per source —
+  // Binance via WS, Twelve Data via polling, future brokers via their own.
+  const byProvider = useMemo(() => {
+    const groups: Record<string, string[]> = {};
+    for (const e of watchlist) {
+      (groups[e.providerId] ||= []).push(e.symbol);
+    }
+    return groups;
+  }, [watchlist]);
 
-    fetchTickers24h(watchlist)
-      .then((tickers) => {
-        if (cancelled) return;
-        const map: Record<string, Row> = {};
-        tickers.forEach((t) => {
-          map[t.symbol] = {
-            symbol: t.symbol,
-            price: t.lastPrice,
-            pct: t.priceChangePercent,
+  useEffect(() => {
+    const providerIds = Object.keys(byProvider);
+    if (providerIds.length === 0) return;
+    const unsubs: Array<() => void> = [];
+
+    for (const providerId of providerIds) {
+      const symbols = byProvider[providerId];
+      const provider = getProvider(providerId);
+
+      // subscribeMiniTickers already fires an initial fetch internally —
+      // calling fetchTickers24h here too would double the credit cost on
+      // Twelve Data (billed per symbol) and instantly hit the daily quota.
+      const unsub = provider.subscribeMiniTickers(symbols, (tick) => {
+        const key = `${providerId}|${tick.symbol}`;
+        setRows((prev) => {
+          const prevRow = prev[key];
+          if (prevRow) {
+            if (tick.close > prevRow.price) {
+              setFlash((f) => ({ ...f, [key]: "up" }));
+              setTimeout(() => setFlash((f) => ({ ...f, [key]: null })), 300);
+            } else if (tick.close < prevRow.price) {
+              setFlash((f) => ({ ...f, [key]: "down" }));
+              setTimeout(() => setFlash((f) => ({ ...f, [key]: null })), 300);
+            }
+          }
+          return {
+            ...prev,
+            [key]: {
+              symbol: tick.symbol,
+              providerId,
+              price: tick.close,
+              pct: tick.pct,
+            },
           };
         });
-        setRows(map);
-      })
-      .catch(console.error);
-
-    const ws = getBinanceWS();
-    const unsub = ws.subscribeMiniTickers(watchlist, (tick) => {
-      setRows((prev) => {
-        const prevRow = prev[tick.symbol];
-        if (prevRow) {
-          if (tick.close > prevRow.price) {
-            setFlash((f) => ({ ...f, [tick.symbol]: "up" }));
-            setTimeout(
-              () =>
-                setFlash((f) => ({ ...f, [tick.symbol]: null })),
-              300,
-            );
-          } else if (tick.close < prevRow.price) {
-            setFlash((f) => ({ ...f, [tick.symbol]: "down" }));
-            setTimeout(
-              () =>
-                setFlash((f) => ({ ...f, [tick.symbol]: null })),
-              300,
-            );
-          }
-        }
-        return {
-          ...prev,
-          [tick.symbol]: {
-            symbol: tick.symbol,
-            price: tick.close,
-            pct: tick.pct,
-          },
-        };
       });
-    });
+      unsubs.push(unsub);
+    }
 
     return () => {
-      cancelled = true;
-      unsub();
+      unsubs.forEach((u) => u());
     };
-  }, [watchlist]);
+  }, [byProvider]);
+
+  // Click on a row → switch chart provider AND symbol together so the
+  // remount key (providerId-symbol-tf) flips both atomically.
+  const handleSelect = (entry: WatchlistEntry) => {
+    if (entry.providerId !== activeProviderId) setProviderId(entry.providerId);
+    if (entry.symbol !== activeSymbol) setSymbol(entry.symbol);
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -103,14 +114,20 @@ export function Watchlist() {
       </div>
       <ScrollArea className="flex-1">
         <div className="flex flex-col">
-          {watchlist.map((s) => {
-            const row = rows[s];
-            const isActive = s === symbol;
-            const f = flash[s];
+          {watchlist.map((entry) => {
+            const key = entryKey(entry);
+            const row = rows[key];
+            const isActive =
+              entry.symbol === activeSymbol && entry.providerId === activeProviderId;
+            const f = flash[key];
+            // Crypto stays "BTC | USDT"; non-Binance shows symbol + provider tag.
+            const isBinance = entry.providerId === "binance";
+            const baseLabel = isBinance ? entry.symbol.replace("USDT", "") : entry.symbol;
+            const tag = isBinance ? "USDT" : getProvider(entry.providerId).name;
             return (
               <div
-                key={s}
-                onClick={() => setSymbol(s)}
+                key={key}
+                onClick={() => handleSelect(entry)}
                 className={cn(
                   "group grid cursor-pointer grid-cols-[1fr_auto_auto] items-center gap-2 px-3 py-1.5 text-xs transition-colors",
                   "hover:bg-tv-panel-hover",
@@ -118,10 +135,8 @@ export function Watchlist() {
                 )}
               >
                 <div className="flex items-center gap-2">
-                  <span className="font-medium text-tv-text">
-                    {s.replace("USDT", "")}
-                  </span>
-                  <span className="text-[10px] text-tv-text-dim">USDT</span>
+                  <span className="font-medium text-tv-text">{baseLabel}</span>
+                  <span className="text-[10px] text-tv-text-dim">{tag}</span>
                 </div>
                 <span
                   className={cn(
@@ -149,10 +164,10 @@ export function Watchlist() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      removeFromWatchlist(s);
+                      removeFromWatchlist(entry);
                     }}
                     className="invisible rounded p-0.5 text-tv-text-muted hover:bg-tv-bg hover:text-tv-red group-hover:visible"
-                    aria-label={`Quitar ${s} del watchlist`}
+                    aria-label={`Quitar ${entry.symbol} del watchlist`}
                   >
                     <X className="h-3 w-3" />
                   </button>
