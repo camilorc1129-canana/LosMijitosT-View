@@ -57,6 +57,11 @@ const TICKER_POLL_MS = 300_000;
 
 const MINUTE_COOLDOWN_MS = 60_000;
 const RATE_LIMIT_KEY = "td-rate-limit-until";
+const RATE_LIMIT_SCOPE_KEY = "td-rate-limit-scope";
+
+/** Window event fired when the per-day quota is exhausted, so the UI can
+ *  surface a modal. Listen via window.addEventListener(DAILY_LIMIT_EVENT). */
+export const DAILY_LIMIT_EVENT = "twelvedata:daily-limit";
 
 function readPersistedDeadline(): number {
   if (typeof window === "undefined") return 0;
@@ -73,21 +78,38 @@ function isRateLimited(): boolean {
 }
 
 /**
+ * If the per-day quota cooldown is currently active, return its deadline
+ * (epoch ms of the next UTC midnight); otherwise null. The UI uses the
+ * deadline as a stable id so it shows the "quota exhausted" modal once per
+ * exhaustion period and again only when a fresh one starts.
+ */
+export function getStocksDailyLimitDeadline(): number | null {
+  if (typeof window === "undefined") return null;
+  if (window.localStorage.getItem(RATE_LIMIT_SCOPE_KEY) !== "day") return null;
+  const deadline = readPersistedDeadline();
+  return Date.now() < deadline ? deadline : null;
+}
+
+/**
  * Engage the cooldown. A per-minute limit pauses for 60 s; the per-day
  * quota pauses until the next UTC midnight (when Twelve Data resets it) so
  * we stop the every-60s retry loop that otherwise re-trips the exhausted
- * daily quota forever.
+ * daily quota forever. A day-scope hit also fires DAILY_LIMIT_EVENT.
  */
 function markRateLimited(scope: "day" | "minute") {
   rateLimitedUntil =
     scope === "day" ? nextUtcMidnightMs() : Date.now() + MINUTE_COOLDOWN_MS;
   if (typeof window !== "undefined") {
     window.localStorage.setItem(RATE_LIMIT_KEY, String(rateLimitedUntil));
+    window.localStorage.setItem(RATE_LIMIT_SCOPE_KEY, scope);
   }
   console.warn(
     `[twelvedata] ${scope} rate-limit hit; pausing requests until`,
     new Date(rateLimitedUntil).toLocaleString(),
   );
+  if (scope === "day" && typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(DAILY_LIMIT_EVENT));
+  }
 }
 
 async function rateAwareFetch(url: string, init?: RequestInit): Promise<Response> {
